@@ -108,7 +108,7 @@ jobs:
           python packaging/build_dist.py
 
       - name: Package Windows with Inno Setup
-        uses: Min-Shar/inno-setup-action@v1
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
           path: packaging/inno_setup.iss
 
@@ -142,7 +142,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install nuitka zstandard ordered-set pillow
+          python -m pip install nuitka zstandard ordered-set pillow imageio
 
       - name: Nuitka Compiler Cache
         uses: actions/cache@v4
