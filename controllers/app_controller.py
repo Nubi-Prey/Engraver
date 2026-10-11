@@ -32,6 +32,15 @@ class AppController(QObject):
         self._connect_signals()
         self._init_presets()
 
+    def cleanup(self):
+        """Para temporizadores e aguarda workers pendentes para encerramento gracioso."""
+        try:
+            self.debounce_timer.stop()
+            if self.thread_pool.activeThreadCount() > 0:
+                self.thread_pool.waitForDone(1000)
+        except Exception:
+            pass
+
     def _connect_signals(self):
         sb = self.view.sidebar
         sb.openFileClicked.connect(self.on_open_file)

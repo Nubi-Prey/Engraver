@@ -25,10 +25,27 @@ mkdir -p "${APPS_DIR}"
 mkdir -p "${ICONS_DIR}"
 mkdir -p "${LOCAL_BIN}"
 
-# 2. Instalação do ícone
+# 2. Instalação do ícone em resoluções padrão e pixmaps
 if [ -f "${ICON_PATH}" ]; then
+    mkdir -p "${HOME}/.local/share/pixmaps"
+    cp "${ICON_PATH}" "${HOME}/.local/share/pixmaps/engraver.png"
     cp "${ICON_PATH}" "${ICONS_DIR}/engraver.png"
-    echo "  ✓ Ícone copiado para ${ICONS_DIR}/engraver.png"
+
+    # Tenta gerar ícones em resoluções adicionais se python3-pil ou convert estiver disponível
+    python3 -c "
+import os
+try:
+    from PIL import Image
+    src = Image.open('${ICON_PATH}')
+    for s in [16, 24, 32, 48, 64, 96, 128, 192]:
+        d = os.path.expanduser(f'~/.local/share/icons/hicolor/{s}x{s}/apps')
+        os.makedirs(d, exist_ok=True)
+        src.resize((s, s), Image.LANCZOS).save(os.path.join(d, 'engraver.png'))
+except Exception:
+    pass
+" 2>/dev/null || true
+
+    echo "  ✓ Ícones instalados em ${HOME}/.local/share/icons/hicolor/ e pixmaps/"
 fi
 
 # 3. Criação do arquivo .desktop personalizado com caminhos absolutos
@@ -47,10 +64,11 @@ Categories=Graphics;2DGraphics;RasterGraphics;Photography;
 MimeType=image/png;image/jpeg;image/bmp;image/tiff;image/webp;
 Keywords=laser;engraving;dither;photo;joias;gravação;
 StartupNotify=true
-StartupWMClass=Engraver
+StartupWMClass=engraver
 EOF
 
 chmod +x "${DESKTOP_FILE}"
+ln -sf "${DESKTOP_FILE}" "${APPS_DIR}/Engraver.desktop"
 echo "  ✓ Atalho do sistema criado em ${DESKTOP_FILE}"
 
 # 4. Criação de symlinks no terminal (~/.local/bin)
@@ -58,9 +76,12 @@ ln -sf "${BIN_PATH}" "${LOCAL_BIN}/engraver"
 ln -sf "${CLI_PATH}" "${LOCAL_BIN}/engraver-cli"
 echo "  ✓ Comandos 'engraver' e 'engraver-cli' vinculados em ${LOCAL_BIN}/"
 
-# 5. Atualização da base de dados do desktop (GNOME/KDE/XFCE)
+# 5. Atualização da base de dados do desktop e cache de ícones (GNOME/KDE/XFCE)
 if command -v update-desktop-database > /dev/null 2>&1; then
     update-desktop-database "${APPS_DIR}" 2>/dev/null || true
+fi
+if command -v gtk-update-icon-cache > /dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" 2>/dev/null || true
 fi
 
 echo ""

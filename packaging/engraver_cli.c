@@ -33,6 +33,10 @@ int main(int argc, char *argv[]) {
     PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
     ZeroMemory(&pi, sizeof(pi));
 
     if (!CreateProcessA(NULL, cmd_line, NULL, NULL, TRUE, 0, NULL, dir, &si, &pi)) {
@@ -46,6 +50,15 @@ int main(int argc, char *argv[]) {
 
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+
+    if (exit_code != 0 && exit_code >= 0x80000000) {
+        if (exit_code == 0xC0000005) {
+            fprintf(stderr, "\n[ERRO CRITICO] O Engraver encerrou inesperadamente por violacao de acesso (0xC0000005).\n");
+            fprintf(stderr, "Verifique o arquivo 'engraver_crash.log' ou consulte o Visualizador de Eventos do Windows.\n");
+        } else {
+            fprintf(stderr, "\n[ERRO CRITICO] O Engraver encerrou com excecao do sistema (0x%08lX).\n", (unsigned long)exit_code);
+        }
+    }
 
     return (int)exit_code;
 }

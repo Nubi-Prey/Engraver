@@ -22,6 +22,13 @@ Não é necessário ter Python instalado para usar o Engraver! Baixe os executá
 * **macOS:**
   - `Engraver-macOS.dmg` — Imagem de disco padrão para macOS.
 
+> [!NOTE]
+> **Aviso do Windows Defender SmartScreen / Microsoft Edge:**
+> Como o Engraver é um software de código aberto recém-lançado e distribuído de forma independente (sem certificado comercial pago de US$ 400/ano), o Windows SmartScreen pode exibir um aviso de "Fornecedor desconhecido" ao baixar ou executar:
+> - **Na tela azul do SmartScreen:** Clique em **"Mais informações"** (*More info*) e depois no botão **"Executar assim mesmo"** (*Run anyway*).
+> - **Na versão Portátil (`.zip`):** Antes ou após extrair, clique com o botão direito no arquivo → **Propriedades** → marque a caixa **"Desbloquear"** (*Unblock*) na parte inferior → **OK**.
+> - Todos os binários são gerados diretamente nos servidores públicos do GitHub Actions a partir do código deste repositório, com hashes disponíveis no arquivo `SHA256SUMS.txt`.
+
 ---
 
 ## Arquitetura Modular (MVC)

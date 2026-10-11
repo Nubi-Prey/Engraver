@@ -116,6 +116,8 @@ def run_nuitka(clean: bool = False, dry_run: bool = False):
         # Otimizações Slim: Bloqueio estrito de módulos não utilizados
         "--nofollow-import-to=tkinter,customtkinter,unittest,test,pydoc,idlelib,email,html,http,xml,numba,llvmlite",
         "--noinclude-pytest-mode=nofollow",
+        "--no-deployment-flag=self-execution",
+        "--include-package=PIL",
         # Inclusão de dados e recursos estáticos
         f"--include-data-dir={RESOURCES_DIR}=resources",
         f"--include-data-dir={ROOT_DIR / 'core'}=core",
@@ -126,7 +128,7 @@ def run_nuitka(clean: bool = False, dry_run: bool = False):
     # Flags específicas por plataforma
     if is_win:
         cmd += [
-            "--windows-console-mode=disable",
+            "--windows-console-mode=attach",
             f"--windows-icon-from-ico={RESOURCES_DIR / 'icon.ico'}",
             "--windows-company-name=Engraver",
             "--windows-product-name=Engraver",

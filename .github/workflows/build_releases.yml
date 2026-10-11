@@ -44,11 +44,21 @@ jobs:
       - name: Package Linux AppImage
         run: |
           mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/pixmaps
           cp -r dist/Engraver/* AppDir/usr/bin/
           cp packaging/engraver.desktop AppDir/engraver.desktop
           cp resources/icon.png AppDir/engraver.png
-          cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/engraver.png
+          cp resources/icon.png AppDir/.DirIcon
+          cp resources/icon.png AppDir/usr/share/pixmaps/engraver.png
+          python3 -c "
+          import os
+          from PIL import Image
+          src = Image.open('resources/icon.png')
+          for s in [16, 24, 32, 48, 64, 96, 128, 192, 256]:
+              d = f'AppDir/usr/share/icons/hicolor/{s}x{s}/apps'
+              os.makedirs(d, exist_ok=True)
+              src.resize((s, s), Image.LANCZOS).save(os.path.join(d, 'engraver.png'))
+          "
 
           # AppRun wrapper supporting both GUI and CLI invocations
           cat << 'EOF' > AppDir/AppRun

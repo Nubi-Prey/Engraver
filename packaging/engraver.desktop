@@ -11,4 +11,4 @@ Categories=Graphics;2DGraphics;RasterGraphics;Photography;
 MimeType=image/png;image/jpeg;image/bmp;image/tiff;image/webp;
 Keywords=laser;engraving;dither;photo;joias;gravação;
 StartupNotify=true
-StartupWMClass=Engraver
+StartupWMClass=engraver

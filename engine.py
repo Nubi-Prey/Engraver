@@ -1,8 +1,19 @@
 import cv2
 import numpy as np
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFile
+from PIL import (
+    BmpImagePlugin,
+    GifImagePlugin,
+    JpegImagePlugin,
+    PngImagePlugin,
+    TiffImagePlugin,
+    WebPImagePlugin,
+)
 from PySide6.QtGui import QImage
 from core.dither_backend import dither_atkinson, dither_jarvis
+
+# Pré-inicializa os decodificadores e plugins do Pillow estaticamente
+Image.init()
 
 
 def load_image_pillow(path):

@@ -13,6 +13,11 @@ destinadas a máquinas de gravação a laser (fibras ópticas, MOPA, UV e CO2).
   Dê dois cliques no executável:
     Engraver.exe
 
+  [Nota Windows SmartScreen]: Caso o Windows exiba o aviso azul de proteção
+  ("O Windows protegeu o seu computador"), clique em "Mais informações" e em
+  seguida no botão "Executar assim mesmo". Alternativamente, clique com o botão
+  direito no arquivo -> Propriedades -> Marque "Desbloquear" -> OK.
+
 - No Linux:
   Abra um terminal na pasta e execute:
     ./Engraver
