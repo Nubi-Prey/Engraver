@@ -19,9 +19,9 @@ def test_cli_basic_execution(sample_rgb_image):
         assert os.path.getsize(out_path) > 0
 
         # Output must be a valid 1-bit BMP
-        img = Image.open(out_path)
-        assert img.mode == "1"
-        assert img.size == sample_rgb_image.size
+        with Image.open(out_path) as img:
+            assert img.mode == "1"
+            assert img.size == sample_rgb_image.size
     finally:
         if os.path.exists(in_path):
             os.remove(in_path)
@@ -51,8 +51,8 @@ def test_cli_with_methods_and_custom_settings(sample_rgb_image):
         ])
         assert ret == 0
         assert os.path.exists(out_path)
-        img = Image.open(out_path)
-        assert img.mode == "1"
+        with Image.open(out_path) as img:
+            assert img.mode == "1"
     finally:
         if os.path.exists(in_path):
             os.remove(in_path)
@@ -73,8 +73,8 @@ def test_cli_legacy_flags_and_no_dither(sample_rgba_image):
         ret = run_cli([in_path, "-o", out_path, "--bg-black", "--no-dither", "-q"])
         assert ret == 0
         assert os.path.exists(out_path)
-        img = Image.open(out_path)
-        assert img.mode == "L" # Grayscale mode
+        with Image.open(out_path) as img:
+            assert img.mode == "L" # Grayscale mode
     finally:
         if os.path.exists(in_path):
             os.remove(in_path)

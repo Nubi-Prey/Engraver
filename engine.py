@@ -7,9 +7,11 @@ from core.dither_backend import dither_atkinson, dither_jarvis
 
 def load_image_pillow(path):
     try:
-        img = Image.open(path)
-        dpi = img.info.get("dpi", (72, 72))
-        return img, dpi
+        with Image.open(path) as raw:
+            dpi = raw.info.get("dpi", (72, 72))
+            img = raw.copy()
+            img.info["dpi"] = dpi
+            return img, dpi
     except (FileNotFoundError, OSError, ValueError) as e:
         raise IOError(f"Erro ao carregar imagem: {e}") from e
 

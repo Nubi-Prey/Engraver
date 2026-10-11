@@ -214,8 +214,8 @@ def test_auto_extension_logic(tmp_path):
     worker.run()
     assert os.path.exists(target_path)
     assert os.path.getsize(target_path) > 0
-    saved = Image.open(target_path)
-    assert saved.format == "BMP"
+    with Image.open(target_path) as saved:
+        assert saved.format == "BMP"
 
 
 def test_smooth_zoom_wheel(qapp):

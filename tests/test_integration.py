@@ -63,10 +63,10 @@ def test_app_controller_full_workflow(qapp, temp_image_file):
         assert os.path.getsize(tmp_export_path) > 0
 
         # Verificar imagem exportada
-        exported_img = Image.open(tmp_export_path)
-        assert exported_img.mode == "1"
-        expected_w = round(15.0 / 25.4 * settings["target_dpi"])
-        assert exported_img.width == expected_w
+        with Image.open(tmp_export_path) as exported_img:
+            assert exported_img.mode == "1"
+            expected_w = round(15.0 / 25.4 * settings["target_dpi"])
+            assert exported_img.width == expected_w
     finally:
         if os.path.exists(tmp_export_path):
             os.remove(tmp_export_path)
