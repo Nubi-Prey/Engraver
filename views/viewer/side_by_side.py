@@ -113,8 +113,14 @@ class SideBySideViewer(QWidget):
         # Sincronização mútua entre os dois visores
         self.canvas_orig.zoomChanged.connect(self._on_orig_zoom)
         self.canvas_sim.zoomChanged.connect(self._on_sim_zoom)
-        self.canvas_orig.panChanged.connect(lambda *_: self.canvas_sim.sync_scroll_from(self.canvas_orig))
-        self.canvas_sim.panChanged.connect(lambda *_: self.canvas_orig.sync_scroll_from(self.canvas_sim))
+        self.canvas_orig.panChanged.connect(self._on_orig_pan)
+        self.canvas_sim.panChanged.connect(self._on_sim_pan)
+
+    def _on_orig_pan(self, h: int, v: int):
+        self.canvas_sim.sync_scroll_from(self.canvas_orig)
+
+    def _on_sim_pan(self, h: int, v: int):
+        self.canvas_orig.sync_scroll_from(self.canvas_sim)
 
     def _toolbar_btn_style(self):
         return """

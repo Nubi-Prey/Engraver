@@ -284,6 +284,13 @@ class SettingsSidebar(QWidget):
             parent_layout.addWidget(card)
         return card
 
+    def _emit_settings_changed(self, *args):
+        self.settingsChanged.emit()
+
+    def _on_bg_button_toggled(self, button, checked):
+        if checked:
+            self.settingsChanged.emit()
+
     def _build_dimensions_card(self, parent_layout=None):
         card = create_card_frame()
         l = QVBoxLayout(card)
@@ -293,11 +300,11 @@ class SettingsSidebar(QWidget):
         l.addWidget(self._create_card_title("CONTROLES FÍSICOS"))
 
         self.aspect_lock = AspectRatioLock()
-        self.aspect_lock.dimensionsChanged.connect(lambda w, h: self.settingsChanged.emit())
+        self.aspect_lock.dimensionsChanged.connect(self._emit_settings_changed)
         l.addWidget(self.aspect_lock)
 
         self.slider_dpi = SliderSpinBox("DPI ALVO", min_val=96, max_val=1000, default_val=300, step=10, suffix="DPI")
-        self.slider_dpi.valueChanged.connect(lambda v: self.settingsChanged.emit())
+        self.slider_dpi.valueChanged.connect(self._emit_settings_changed)
         l.addWidget(self.slider_dpi)
 
         if parent_layout is not None:
@@ -345,11 +352,11 @@ class SettingsSidebar(QWidget):
         l.addWidget(self._create_card_title("PRÉ-PROCESSAMENTO"))
 
         self.slider_bright = SliderSpinBox("BRILHO", 0, 100, 50)
-        self.slider_bright.valueChanged.connect(lambda v: self.settingsChanged.emit())
+        self.slider_bright.valueChanged.connect(self._emit_settings_changed)
         l.addWidget(self.slider_bright)
 
         self.slider_contrast = SliderSpinBox("CONTRASTE", 0, 100, 50)
-        self.slider_contrast.valueChanged.connect(lambda v: self.settingsChanged.emit())
+        self.slider_contrast.valueChanged.connect(self._emit_settings_changed)
         l.addWidget(self.slider_contrast)
 
         # Gamma row
@@ -377,12 +384,12 @@ class SettingsSidebar(QWidget):
                 border-color: #C084FC;
             }
         """)
-        self.chk_gamma.toggled.connect(lambda chk: self.settingsChanged.emit())
+        self.chk_gamma.toggled.connect(self._emit_settings_changed)
         gamma_row.addWidget(self.chk_gamma)
         l.addLayout(gamma_row)
 
         self.slider_sharpen = SliderSpinBox("NITIDEZ (Unsharp)", 0, 100, 85)
-        self.slider_sharpen.valueChanged.connect(lambda v: self.settingsChanged.emit())
+        self.slider_sharpen.valueChanged.connect(self._emit_settings_changed)
         l.addWidget(self.slider_sharpen)
 
         # Background composition row
@@ -418,7 +425,7 @@ class SettingsSidebar(QWidget):
             self.bg_group.addButton(rb)
             bg_row.addWidget(rb)
 
-        self.bg_group.buttonToggled.connect(lambda b, chk: self.settingsChanged.emit() if chk else None)
+        self.bg_group.buttonToggled.connect(self._on_bg_button_toggled)
         l.addLayout(bg_row)
 
         if parent_layout is not None:
@@ -457,7 +464,7 @@ class SettingsSidebar(QWidget):
                 border: 1px solid #2D2845;
             }
         """)
-        self.combo_method.currentTextChanged.connect(lambda t: self.settingsChanged.emit())
+        self.combo_method.currentTextChanged.connect(self._emit_settings_changed)
         method_row.addWidget(self.combo_method, stretch=1)
         l.addLayout(method_row)
 
@@ -482,12 +489,12 @@ class SettingsSidebar(QWidget):
                 border-color: #C084FC;
             }
         """)
-        self.chk_invert.toggled.connect(lambda chk: self.settingsChanged.emit())
+        self.chk_invert.toggled.connect(self._emit_settings_changed)
         inv_row.addWidget(self.chk_invert)
         l.addLayout(inv_row)
 
         self.slider_density = SliderSpinBox("DENSIDADE", 1, 10, 1)
-        self.slider_density.valueChanged.connect(lambda v: self.settingsChanged.emit())
+        self.slider_density.valueChanged.connect(self._emit_settings_changed)
         l.addWidget(self.slider_density)
 
         if parent_layout is not None:
