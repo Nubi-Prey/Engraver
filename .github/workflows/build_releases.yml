@@ -66,13 +66,17 @@ jobs:
           chmod +x appimagetool
           ./appimagetool --appimage-extract-and-run AppDir Engraver-Linux-x86_64.AppImage
 
+      - name: Prepare Linux Artifacts
+        run: |
+          cp dist/Engraver-Linux-x86_64.tar.xz ./Engraver-Linux-x86_64.tar.xz
+
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-binaries
           path: |
             Engraver-Linux-x86_64.AppImage
-            dist/Engraver-Linux-x86_64.tar.xz
+            Engraver-Linux-x86_64.tar.xz
 
   build-windows:
     name: Build Windows (Installer & Portable ZIP)
@@ -112,10 +116,11 @@ jobs:
         with:
           path: packaging/inno_setup.iss
 
-      - name: Rename Windows Installer
+      - name: Prepare Windows Artifacts
         shell: bash
         run: |
           mv dist_installer/Engraver-Setup-*.exe Engraver-Windows-Setup-x64.exe
+          cp dist/Engraver-Windows-Portable-x64.zip ./Engraver-Windows-Portable-x64.zip
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -123,7 +128,7 @@ jobs:
           name: windows-binaries
           path: |
             Engraver-Windows-Setup-x64.exe
-            dist/Engraver-Windows-Portable-x64.zip
+            Engraver-Windows-Portable-x64.zip
 
   build-macos:
     name: Build macOS (DMG)
@@ -175,6 +180,8 @@ jobs:
     needs: [build-linux, build-windows, build-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -185,6 +192,8 @@ jobs:
       - name: Generate SHA256 Checksums
         run: |
           cd release_files
+          find . -mindepth 2 -type f -exec mv -t . {} + 2>/dev/null || true
+          rm -rf */ 2>/dev/null || true
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -194,3 +203,4 @@ jobs:
           files: release_files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
