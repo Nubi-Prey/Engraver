@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=2.0
+Type=Application
+Name=Engraver
+GenericName=Laser Engraving Photo Editor
+Comment=Preparação profissional de imagens para gravação a laser em joias e metais
+Exec=Engraver %F
+Icon=engraver
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;Photography;
+MimeType=image/png;image/jpeg;image/bmp;image/tiff;image/webp;
+Keywords=laser;engraving;dither;photo;joias;gravação;
+StartupNotify=true
+StartupWMClass=Engraver

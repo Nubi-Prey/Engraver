@@ -1,0 +1,196 @@
+name: Build and Release Desktop Apps (Nuitka Native)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Build Linux (AppImage & Portable Tarball)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install build tools and dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y gcc ccache
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install nuitka zstandard ordered-set pillow
+
+      - name: Nuitka Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/Nuitka
+            ~/.cache/ccache
+          key: nuitka-linux-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'core/**', 'views/**') }}
+          restore-keys: |
+            nuitka-linux-${{ runner.os }}-
+
+      - name: Compile and Package with Nuitka
+        run: |
+          python packaging/build_dist.py
+
+      - name: Package Linux AppImage
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp -r dist/Engraver/* AppDir/usr/bin/
+          cp packaging/engraver.desktop AppDir/engraver.desktop
+          cp resources/icon.png AppDir/engraver.png
+          cp resources/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/engraver.png
+
+          # AppRun wrapper supporting both GUI and CLI invocations
+          cat << 'EOF' > AppDir/AppRun
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          if [ "$1" = "cli" ]; then
+              shift
+              exec "${HERE}/usr/bin/engraver-cli" "$@"
+          fi
+          exec "${HERE}/usr/bin/Engraver" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract-and-run AppDir Engraver-Linux-x86_64.AppImage
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: |
+            Engraver-Linux-x86_64.AppImage
+            dist/Engraver-Linux-x86_64.tar.xz
+
+  build-windows:
+    name: Build Windows (Installer & Portable ZIP)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install nuitka zstandard ordered-set pillow
+
+      - name: Nuitka Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\Nuitka\Nuitka\Cache
+          key: nuitka-win-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'core/**', 'views/**') }}
+          restore-keys: |
+            nuitka-win-${{ runner.os }}-
+
+      - name: Compile Standalone Native C with Nuitka
+        shell: bash
+        run: |
+          python packaging/build_dist.py
+
+      - name: Package Windows with Inno Setup
+        uses: Min-Shar/inno-setup-action@v1
+        with:
+          path: packaging/inno_setup.iss
+
+      - name: Rename Windows Installer
+        shell: bash
+        run: |
+          mv dist_installer/Engraver-Setup-*.exe Engraver-Windows-Setup-x64.exe
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: |
+            Engraver-Windows-Setup-x64.exe
+            dist/Engraver-Windows-Portable-x64.zip
+
+  build-macos:
+    name: Build macOS (DMG)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install nuitka zstandard ordered-set pillow
+
+      - name: Nuitka Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Nuitka
+          key: nuitka-macos-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'core/**', 'views/**') }}
+          restore-keys: |
+            nuitka-macos-${{ runner.os }}-
+
+      - name: Compile Standalone Native with Nuitka
+        run: |
+          python packaging/build_dist.py
+
+      - name: Package macOS DMG
+        run: |
+          mkdir -p dmg_root
+          cp -r dist/Engraver dmg_root/Engraver.app
+          cp LICENSE packaging/README_DIST.txt dmg_root/
+          hdiutil create -volname "Engraver" -srcfolder dmg_root -ov -format UDZO Engraver-macOS.dmg
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: Engraver-macOS.dmg
+
+  release:
+    name: Publish GitHub Release with Checksums
+    needs: [build-linux, build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: release_files
+
+      - name: Generate SHA256 Checksums
+        run: |
+          cd release_files
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

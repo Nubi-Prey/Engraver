@@ -1,0 +1,108 @@
+/* ========================================================
+   Engraver — Dark Slate Purple & Neon Violet Theme (Qt Style Sheet)
+   ======================================================== */
+
+QMainWindow {
+    background-color: #0E0C15;
+    color: #F8FAFC;
+}
+
+QWidget {
+    color: #F8FAFC;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+}
+
+/* Tooltips */
+QToolTip {
+    background-color: #1F1C2E;
+    color: #F8FAFC;
+    border: 1px solid #2D2845;
+    border-radius: 6px;
+    padding: 5px 9px;
+    font-size: 11px;
+}
+
+/* Sliders */
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #1F1C2E;
+    border: 1px solid #2D2845;
+    border-radius: 2px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #A855F7;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    background: #F8FAFC;
+    border: 2px solid #A855F7;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    margin-bottom: -5px;
+    border-radius: 7px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #FFFFFF;
+    border-color: #C084FC;
+}
+
+/* Spinboxes */
+QSpinBox, QDoubleSpinBox {
+    background-color: #1F1C2E;
+    border: 1px solid #2D2845;
+    border-radius: 6px;
+    padding: 3px 6px;
+    color: #F8FAFC;
+    selection-background-color: #A855F7;
+    selection-color: #FFFFFF;
+}
+
+QSpinBox:focus, QDoubleSpinBox:focus {
+    border-color: #C084FC;
+    background-color: #242036;
+}
+
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+    width: 0px; /* Esconde botões de seta para um visual mais limpo */
+}
+
+/* Dialogs */
+QMessageBox {
+    background-color: #171523;
+}
+
+QInputDialog {
+    background-color: #171523;
+}
+
+QInputDialog QLineEdit {
+    background-color: #1F1C2E;
+    border: 1px solid #2D2845;
+    border-radius: 6px;
+    padding: 6px;
+    color: #F8FAFC;
+}
+
+QInputDialog QLineEdit:focus {
+    border-color: #C084FC;
+}
+
+QInputDialog QPushButton, QMessageBox QPushButton {
+    background-color: #1F1C2E;
+    border: 1px solid #2D2845;
+    border-radius: 6px;
+    padding: 6px 16px;
+    color: #F8FAFC;
+    font-weight: 500;
+}
+
+QInputDialog QPushButton:hover, QMessageBox QPushButton:hover {
+    background-color: #2D2845;
+    border-color: #6366F1;
+}

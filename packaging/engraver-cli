@@ -1,0 +1,4 @@
+#!/bin/sh
+# Launcher de linha de comando para Linux (engraver-cli)
+DIR="$(dirname "$(readlink -f "$0")")"
+exec "$DIR/Engraver" cli "$@"
