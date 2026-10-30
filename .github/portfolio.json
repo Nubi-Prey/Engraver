@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "2.0",
+  "id": "engraver",
+  "repo": "Engraver",
+  "casing": "Nubi-Prey/Engraver",
+  "categoryKey": "graphics",
+  "badge": "IMAGE PROCESSING",
+  "refLabel": "IMAGE PROCESSING",
+  "title": "Engraver",
+  "description": "Aplicativo desktop para pré-processamento e difusão de erro voltado à gravação a laser em peças metálicas e joias. Pipeline de 10 etapas com rotinas de cálculo em C puro via ctypes, visualizador duplo sincronizado e empacotamento com Nuitka.",
+  "icon": "https://raw.githubusercontent.com/Nubi-Prey/Engraver/main/resources/icon.png",
+  "visitLink": "https://github.com/Nubi-Prey/Engraver/releases",
+  "tags": [
+    "Python 3.10+",
+    "C puro (ctypes)",
+    "PySide6 (Qt6)",
+    "OpenCV",
+    "Dithering",
+    "Nuitka"
+  ],
+  "links": {
+    "github": "https://github.com/Nubi-Prey/Engraver",
+    "releases": "https://github.com/Nubi-Prey/Engraver/releases",
+    "visit": null
+  },
+  "locales": {
+    "pt_BR": {
+      "title": "Engraver",
+      "tagline": "Software de Dithering Acelerado em C para Gravação a Laser",
+      "category": "Computação Gráfica",
+      "badge": "IMAGE PROCESSING",
+      "refLabel": "IMAGE PROCESSING",
+      "description": "Aplicativo desktop para pré-processamento e difusão de erro voltado à gravação a laser em peças metálicas e joias. Pipeline de 10 etapas com rotinas de cálculo em C puro via ctypes, visualizador duplo sincronizado e empacotamento com Nuitka.",
+      "tags": [
+        "Python 3.10+",
+        "C puro (ctypes)",
+        "PySide6 (Qt6)",
+        "OpenCV",
+        "Dithering",
+        "Nuitka"
+      ],
+      "highlights": [
+        "Difusão de erro (Atkinson, Floyd-Steinberg, JJN) calculada em C puro via ctypes",
+        "Fórmula de luminância R×0.6 + G×0.3 + B×0.1 calibrada para reflexão em metais",
+        "Visualizador duplo Qt6 com zoom sincronizado (5% a 3200%) e binários empacotados com Nuitka"
+      ]
+    },
+    "en_US": {
+      "title": "Engraver",
+      "tagline": "C-Accelerated Dithering Software for Laser Engraving",
+      "category": "Computer Graphics",
+      "badge": "IMAGE PROCESSING",
+      "refLabel": "IMAGE PROCESSING",
+      "description": "Desktop application for image pre-processing and error-diffusion dithering for laser engraving on metal pieces and jewelry. 10-step pipeline with pure C routines via ctypes, synchronized dual viewer, and Nuitka packaging.",
+      "tags": [
+        "Python 3.10+",
+        "Pure C (ctypes)",
+        "PySide6 (Qt6)",
+        "OpenCV",
+        "Dithering",
+        "Nuitka"
+      ],
+      "highlights": [
+        "Error-diffusion dithering (Atkinson, Floyd-Steinberg, JJN) calculated in pure C via ctypes",
+        "Spectral luminance formula R×0.6 + G×0.3 + B×0.1 calibrated for metal surfaces",
+        "Dual synchronized Qt6 viewer (5% to 3200% zoom) and standalone binaries via Nuitka"
+      ]
+    }
+  }
+}
