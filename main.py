@@ -59,6 +59,39 @@ def _handle_fatal_exception(exc_type, exc_value, exc_traceback):
 sys.excepthook = _handle_fatal_exception
 
 
+def _build_dark_palette(QPalette, QColor):
+    """Cria uma QPalette escura completa para impedir herança do tema claro do SO."""
+    palette = QPalette()
+    bg_main = QColor("#0E0C15")
+    bg_card = QColor("#171523")
+    bg_input = QColor("#1F1C2E")
+    text_main = QColor("#F8FAFC")
+    text_muted = QColor("#5E5873")
+    accent = QColor("#A855F7")
+
+    palette.setColor(QPalette.ColorRole.Window, bg_main)
+    palette.setColor(QPalette.ColorRole.WindowText, text_main)
+    palette.setColor(QPalette.ColorRole.Base, bg_card)
+    palette.setColor(QPalette.ColorRole.AlternateBase, bg_input)
+    palette.setColor(QPalette.ColorRole.ToolTipBase, bg_input)
+    palette.setColor(QPalette.ColorRole.ToolTipText, text_main)
+    palette.setColor(QPalette.ColorRole.Text, text_main)
+    palette.setColor(QPalette.ColorRole.Button, bg_input)
+    palette.setColor(QPalette.ColorRole.ButtonText, text_main)
+    palette.setColor(QPalette.ColorRole.BrightText, QColor("#FFFFFF"))
+    palette.setColor(QPalette.ColorRole.Link, QColor("#C084FC"))
+    palette.setColor(QPalette.ColorRole.Highlight, accent)
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+    palette.setColor(QPalette.ColorRole.PlaceholderText, text_muted)
+
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, text_muted)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, text_muted)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, text_muted)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, bg_main)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button, bg_card)
+    return palette
+
+
 def load_stylesheet():
     qss_path = os.path.join(get_app_dir(), "resources", "styles.qss")
     if os.path.exists(qss_path):
@@ -78,7 +111,7 @@ def main():
         sys.exit(cli.run_cli())
 
     from PySide6.QtCore import Qt
-    from PySide6.QtGui import QIcon
+    from PySide6.QtGui import QColor, QIcon, QPalette
     from PySide6.QtWidgets import QApplication
 
     from views.main_window import MainWindow
@@ -90,9 +123,17 @@ def main():
     )
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     app.setApplicationName("Engraver")
     app.setApplicationDisplayName("Engraver — Preparação para Gravação a Laser")
     app.setDesktopFileName("engraver")
+
+    # Força esquema escuro independente do tema claro/escuro do sistema operacional
+    try:
+        app.styleHints().setColorScheme(Qt.ColorScheme.Dark)
+    except AttributeError:
+        pass
+    app.setPalette(_build_dark_palette(QPalette, QColor))
 
     # Set application icon
     icon_path = os.path.join(get_app_dir(), "resources", "icon.png")

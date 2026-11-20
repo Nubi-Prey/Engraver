@@ -254,3 +254,18 @@ def test_default_dither_method_is_atkinson(qapp):
     sidebar = SettingsSidebar()
     assert sidebar.combo_method.currentText() == "Atkinson"
     assert sidebar.combo_method.itemText(0) == "Atkinson"
+
+
+def test_forced_dark_palette_and_sidebar_background(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QPalette
+    from views.sidebar.settings_sidebar import SettingsSidebar
+    import main
+
+    palette = main._build_dark_palette(QPalette, QColor)
+    assert palette.color(QPalette.ColorRole.Window).name() == "#0e0c15"
+    assert palette.color(QPalette.ColorRole.Base).name() == "#171523"
+    assert palette.color(QPalette.ColorRole.Text).name() == "#f8fafc"
+
+    sidebar = SettingsSidebar()
+    assert sidebar.testAttribute(Qt.WA_StyledBackground) is True
