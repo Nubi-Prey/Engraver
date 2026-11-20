@@ -8,7 +8,13 @@ from core.presets_manager import PresetsManager
 from controllers.preview_worker import PreviewWorker, ExportWorker
 import engine
 
-PREVIEW_MAX_PX = 1600
+PREVIEW_MAX_PX = 2400
+ORIG_DISPLAY_MAX_PX = 4096
+IMAGE_FILE_FILTER = (
+    "Imagens (*.png *.PNG *.jpg *.JPG *.jpeg *.JPEG *.jfif *.JFIF "
+    "*.bmp *.BMP *.tiff *.TIFF *.tif *.TIF *.gif *.GIF *.webp *.WEBP);;"
+    "Todos os arquivos (*.*)"
+)
 
 
 class AppController(QObject):
@@ -18,9 +24,10 @@ class AppController(QObject):
         self.presets_mgr = PresetsManager()
 
         self.original_pil = None
-        self.original_dpi = (72, 72)
+        self.original_dpi = (72.0, 72.0)
         self.current_filepath = None
         self.current_filename = None
+        self._pending_filepath = None
         self.preview_generation = 0
 
         self.debounce_timer = QTimer(self)
@@ -79,11 +86,22 @@ class AppController(QObject):
             self.view,
             "Selecionar Imagem",
             "",
-            "Imagens (*.png *.jpg *.jpeg *.bmp *.tiff *.tif *.gif *.webp);;Todos os arquivos (*.*)"
+            IMAGE_FILE_FILTER,
         )
         if not filepath:
             return
 
+        # Desacopla a abertura da imagem da pilha do diálogo modal nativo (Qt/Shiboken6)
+        self._pending_filepath = filepath
+        QTimer.singleShot(0, self._load_pending_file)
+
+    def _load_pending_file(self):
+        filepath = self._pending_filepath
+        self._pending_filepath = None
+        if filepath:
+            self.load_image(filepath)
+
+    def load_image(self, filepath: str):
         try:
             pil_img, dpi = engine.load_image_pillow(filepath)
             self.original_pil = pil_img
@@ -93,7 +111,8 @@ class AppController(QObject):
 
             w, h = pil_img.size
             mp = (w * h) / 1_000_000
-            dpi_val = dpi[0] if isinstance(dpi, tuple) else dpi
+            raw_dpi = dpi[0] if isinstance(dpi, tuple) else dpi
+            dpi_val = int(round(float(raw_dpi)))
 
             # Dimensão padrão com maior eixo em 100.0 mm (proporcional)
             if w >= h:
@@ -107,9 +126,13 @@ class AppController(QObject):
             self.view.sidebar.set_file_info(filename, f"{mp:.1f}", width_mm, height_mm, dpi_val)
             self.view.sidebar.aspect_lock.set_dimensions(width_mm, height_mm)
 
-            # Normalização de tamanho para o visualizador (mesma resolução base do preview)
-            preview_orig = self._downscale_for_preview(pil_img)
-            qimg = engine.pil_to_qimage(preview_orig)
+            # Preserva a resolução nativa da imagem original no visualizador (teto apenas para >4K)
+            if max(w, h) > ORIG_DISPLAY_MAX_PX:
+                ratio = ORIG_DISPLAY_MAX_PX / max(w, h)
+                display_orig = pil_img.resize((max(1, int(w * ratio)), max(1, int(h * ratio))), Image.LANCZOS)
+            else:
+                display_orig = pil_img
+            qimg = engine.pil_to_qimage(display_orig)
             self.view.viewer.set_original_image(qimg, f"{w} x {h} px")
 
             self.view.set_status(f"Carregado: {filename} ({w}x{h} px)")
@@ -125,9 +148,27 @@ class AppController(QObject):
 
     def _update_resolution_info(self):
         settings = self.view.sidebar.get_all_settings()
+        keep_native = settings.get("keep_native_resolution", False)
         width_mm = settings["width_mm"]
         height_mm = settings["height_mm"]
         target_dpi = settings["target_dpi"]
+
+        if keep_native and self.original_pil is not None:
+            out_w, out_h = self.original_pil.size
+            total_mp = (out_w * out_h) / 1_000_000
+            out1 = f"Saída: {out_w}x{out_h} px | {total_mp:.2f} MP"
+            if total_mp > 10:
+                alert = "⚠ Resolução muito alta!"
+                alert_color = "#ef4444"
+            elif total_mp > 5:
+                alert = "✓ Resolução nativa (alta definição)"
+                alert_color = "#C084FC"
+            else:
+                alert = "✓ Resolução nativa preservada"
+                alert_color = "#C084FC"
+            out2 = f"Saída: {out_w}x{out_h} px (Original 1:1)"
+            self.view.sidebar.set_resolution_alerts(out1, alert, alert_color, out2)
+            return
 
         out_w = round(width_mm / 25.4 * target_dpi)
         out_h = round(height_mm / 25.4 * target_dpi)
@@ -135,9 +176,17 @@ class AppController(QObject):
 
         out1 = f"Saída: {out_w}x{out_h} px | {total_mp:.2f} MP"
 
+        effective_dpi = None
+        if self.original_pil is not None and width_mm > 0 and height_mm > 0:
+            orig_w, orig_h = self.original_pil.size
+            effective_dpi = min(orig_w / (width_mm / 25.4), orig_h / (height_mm / 25.4))
+
         if total_mp > 10:
             alert = "⚠ Resolução muito alta!"
             alert_color = "#ef4444"
+        elif effective_dpi is not None and effective_dpi < target_dpi * 0.85:
+            alert = f"⚠ Origem ~{int(round(effective_dpi))} DPI — prefira foto original"
+            alert_color = "#f59e0b"
         elif total_mp > 5:
             alert = "⚠ Resolução alta"
             alert_color = "#f59e0b"
@@ -162,11 +211,14 @@ class AppController(QObject):
         settings = self.view.sidebar.get_all_settings()
         settings["current_dpi"] = self.original_dpi
 
-        width_mm = settings.get("width_mm", 0)
-        height_mm = settings.get("height_mm", 0)
-        target_dpi = settings.get("target_dpi", 300)
-        target_w = round(width_mm / 25.4 * target_dpi) if width_mm > 0 else 0
-        target_h = round(height_mm / 25.4 * target_dpi) if height_mm > 0 else 0
+        if settings.get("keep_native_resolution", False):
+            target_w, target_h = self.original_pil.size
+        else:
+            width_mm = settings.get("width_mm", 0)
+            height_mm = settings.get("height_mm", 0)
+            target_dpi = settings.get("target_dpi", 300)
+            target_w = round(width_mm / 25.4 * target_dpi) if width_mm > 0 else 0
+            target_h = round(height_mm / 25.4 * target_dpi) if height_mm > 0 else 0
 
         # Prepara a imagem de preview na resolução real de saída do laser (com teto de performance)
         preview_img = self._downscale_for_preview(self.original_pil, target_w=target_w, target_h=target_h)
@@ -179,11 +231,9 @@ class AppController(QObject):
 
     def _on_preview_finished(self, generation, qimg):
         if generation == self.preview_generation:
+            # Sincroniza a geometria da cena do canvas original sem destruir seus pixels nativos
+            self.view.viewer.canvas_orig.set_display_size(qimg.width(), qimg.height())
             self.view.viewer.set_simulated_image(qimg, "Simulação atualizada")
-            # Sincroniza a dimensão da cena do canvas original para zoom/pan 1:1 perfeito
-            if self.view.viewer.canvas_orig.pixmap_item.pixmap().size() != qimg.size():
-                orig_resized = self.original_pil.resize((qimg.width(), qimg.height()), Image.LANCZOS)
-                self.view.viewer.canvas_orig.set_image(engine.pil_to_qimage(orig_resized))
             self._update_resolution_info()
 
     def _on_preview_error(self, generation, error_msg):

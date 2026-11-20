@@ -40,7 +40,10 @@ class ExportWorker(QRunnable):
     def run(self):
         try:
             result_pil = engine.process_live_preview(self.original_pil, self.settings, preview_mode=False)
-            result_pil.save(self.save_path)
+            if self.save_path.lower().endswith((".jpg", ".jpeg")):
+                result_pil.convert("L").save(self.save_path, quality=95, subsampling=0)
+            else:
+                result_pil.save(self.save_path)
             self.signals.finished.emit(self.save_path)
         except Exception as e:
             self.signals.error.emit(str(e))

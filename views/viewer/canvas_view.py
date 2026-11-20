@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtGui import QPixmap, QPainter, QImage, QColor
+from PySide6.QtGui import QPixmap, QPainter, QImage, QColor, QTransform
 from PySide6.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsTextItem
 )
@@ -50,9 +50,22 @@ class CanvasView(QGraphicsView):
         if qimg is None or qimg.isNull():
             return
         pixmap = QPixmap.fromImage(qimg)
+        self.pixmap_item.resetTransform()
         self.pixmap_item.setPixmap(pixmap)
         self.placeholder_item.setVisible(False)
         self.scene.setSceneRect(QRectF(pixmap.rect()))
+
+    def set_display_size(self, target_w: int, target_h: int):
+        """Sincroniza a geometria da cena com outro canvas sem reamostrar os pixels do pixmap."""
+        pixmap = self.pixmap_item.pixmap()
+        if pixmap.isNull() or pixmap.width() <= 0 or pixmap.height() <= 0:
+            return
+        if target_w <= 0 or target_h <= 0:
+            return
+        sx = target_w / pixmap.width()
+        sy = target_h / pixmap.height()
+        self.pixmap_item.setTransform(QTransform.fromScale(sx, sy))
+        self.scene.setSceneRect(QRectF(0, 0, target_w, target_h))
 
     def _update_rendering_quality(self):
         # Em zoom ampliado (> 2.0x), usamos pixelização nítida (Nearest Neighbor)
@@ -130,7 +143,7 @@ class CanvasView(QGraphicsView):
             )
 
     def fit_in_view(self):
-        rect = self.pixmap_item.boundingRect()
+        rect = self.pixmap_item.sceneBoundingRect()
         if not rect.isEmpty():
             self.resetTransform()
             self.fitInView(rect, Qt.KeepAspectRatio)

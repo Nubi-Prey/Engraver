@@ -31,6 +31,7 @@ class SettingsSidebar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedWidth(380)
         self.setStyleSheet("""
             SettingsSidebar {
@@ -78,6 +79,7 @@ class SettingsSidebar(QWidget):
 
         # --- Aba 1: Imagem & Ajustes ---
         tab_image_container = QWidget()
+        tab_image_container.setStyleSheet("background-color: #171523;")
         layout_image = QVBoxLayout(tab_image_container)
         layout_image.setContentsMargins(8, 8, 8, 8)
         layout_image.setSpacing(8)
@@ -89,6 +91,7 @@ class SettingsSidebar(QWidget):
 
         # --- Aba 2: Laser & Dither ---
         tab_laser_container = QWidget()
+        tab_laser_container.setStyleSheet("background-color: #171523;")
         layout_laser = QVBoxLayout(tab_laser_container)
         layout_laser.setContentsMargins(8, 8, 8, 8)
         layout_laser.setSpacing(8)
@@ -105,6 +108,7 @@ class SettingsSidebar(QWidget):
 
         # 2. Rodapé Fixo de Ação (Resumo de Saída + Exportar)
         footer_frame = QWidget()
+        footer_frame.setStyleSheet("background-color: #0E0C15;")
         footer_layout = QVBoxLayout(footer_frame)
         footer_layout.setContentsMargins(0, 0, 0, 0)
         footer_layout.setSpacing(6)
@@ -118,9 +122,10 @@ class SettingsSidebar(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.viewport().setStyleSheet("background-color: #171523;")
         scroll.setStyleSheet("""
             QScrollArea {
-                background-color: transparent;
+                background-color: #171523;
                 border: none;
             }
             QScrollBar:vertical {
@@ -299,6 +304,29 @@ class SettingsSidebar(QWidget):
 
         l.addWidget(self._create_card_title("CONTROLES FÍSICOS"))
 
+        self.chk_keep_native_res = QCheckBox("Manter resolução original (sem redimensionar)")
+        self.chk_keep_native_res.setChecked(False)
+        self.chk_keep_native_res.setStyleSheet("""
+            QCheckBox {
+                color: #A5A1B8;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+                border-radius: 4px;
+                border: 1px solid #2D2845;
+                background-color: #1F1C2E;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #A855F7;
+                border-color: #C084FC;
+            }
+        """)
+        self.chk_keep_native_res.toggled.connect(self._on_keep_native_toggled)
+        l.addWidget(self.chk_keep_native_res)
+
         self.aspect_lock = AspectRatioLock()
         self.aspect_lock.dimensionsChanged.connect(self._emit_settings_changed)
         l.addWidget(self.aspect_lock)
@@ -310,6 +338,11 @@ class SettingsSidebar(QWidget):
         if parent_layout is not None:
             parent_layout.addWidget(card)
         return card
+
+    def _on_keep_native_toggled(self, checked: bool):
+        self.aspect_lock.setEnabled(not checked)
+        self.slider_dpi.setEnabled(not checked)
+        self.settingsChanged.emit()
 
     def _build_resolution_card(self, parent_layout=None):
         card = create_card_frame()
@@ -570,6 +603,7 @@ class SettingsSidebar(QWidget):
     def get_all_settings(self):
         w, h = self.aspect_lock.get_dimensions()
         return {
+            "keep_native_resolution": self.chk_keep_native_res.isChecked(),
             "width_mm": w,
             "height_mm": h,
             "target_dpi": int(self.slider_dpi.value()),
@@ -585,6 +619,11 @@ class SettingsSidebar(QWidget):
 
     def apply_preset_settings(self, s: dict):
         self.blockSignals(True)
+        if "keep_native_resolution" in s:
+            checked = bool(s["keep_native_resolution"])
+            self.chk_keep_native_res.setChecked(checked)
+            self.aspect_lock.setEnabled(not checked)
+            self.slider_dpi.setEnabled(not checked)
         if "target_dpi" in s:
             self.slider_dpi.setValue(s["target_dpi"])
         if "brightness" in s:

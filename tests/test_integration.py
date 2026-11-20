@@ -71,3 +71,51 @@ def test_app_controller_full_workflow(qapp, temp_image_file):
         if os.path.exists(tmp_export_path):
             os.remove(tmp_export_path)
         controller.presets_mgr.delete_preset("Teste Integrado")
+
+
+def test_app_controller_load_exif_uppercase_jpg_and_effective_dpi_alert(qapp, tmp_path):
+    from controllers.app_controller import IMAGE_FILE_FILTER
+
+    # Filtro deve incluir maiúsculas (Linux case-sensitive) e .jfif (WhatsApp Web)
+    for ext in ("*.JPG", "*.JPEG", "*.JFIF", "*.PNG", "*.TIFF"):
+        assert ext in IMAGE_FILE_FILTER
+
+    window = MainWindow()
+    controller = AppController(window)
+
+    # 1. Foto profissional .JPG com EXIF 300 DPI e alta resolução (1500x1000 -> ~381 DPI em 100mm)
+    exif = Image.Exif()
+    exif[0x011A] = 300.0
+    exif[0x011B] = 300.0
+    exif[0x0128] = 2
+    pro_path = tmp_path / "studio_photo.JPG"
+    Image.new("RGB", (1500, 1000), (160, 120, 90)).save(pro_path, format="JPEG", exif=exif)
+
+    controller.load_image(str(pro_path))
+    controller.debounce_timer.stop()
+    controller._run_preview()
+    controller.thread_pool.waitForDone(5000)
+    qapp.processEvents()
+
+    assert "@ 300 DPI" in window.sidebar.lbl_info_dims.text()
+    assert "300.0" not in window.sidebar.lbl_info_dims.text()
+    assert window.viewer.lbl_sim_status.text() == "Simulação atualizada"
+    assert "Resolução adequada" in window.sidebar.lbl_res_alert.text()
+    # Painel Original deve preservar seus 1500x1000 pixels nativos (não ser rebaixado para 1181x787)
+    orig_pm = window.viewer.canvas_orig.pixmap_item.pixmap()
+    assert (orig_pm.width(), orig_pm.height()) == (1500, 1000)
+
+    # Ativar "Manter resolução original" deve desabilitar controles físicos e mostrar saída 1:1
+    window.sidebar.chk_keep_native_res.setChecked(True)
+    assert not window.sidebar.aspect_lock.isEnabled()
+    assert not window.sidebar.slider_dpi.isEnabled()
+    assert "1500x1000 px (Original 1:1)" in window.sidebar.lbl_res_out2.text()
+    window.sidebar.chk_keep_native_res.setChecked(False)
+
+    # 2. Foto amadora de baixa resolução (400x300 @ 72 DPI em 100mm -> ~102 DPI efetivo < 300 DPI alvo)
+    amateur_path = tmp_path / "whatsapp_small.jpeg"
+    Image.new("RGB", (400, 300), (120, 100, 80)).save(amateur_path, format="JPEG")
+
+    controller.load_image(str(amateur_path))
+    assert "prefira foto original" in window.sidebar.lbl_res_alert.text()
+    controller.cleanup()
