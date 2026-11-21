@@ -1,6 +1,6 @@
 ================================================================================
   ENGRAVER — Preparação de Imagens para Gravação a Laser em Joias e Metais
-  Versão 2.0.0 (Standalone Desktop & CLI)
+  Versão 2.1.0 (Standalone Desktop & CLI)
 ================================================================================
 
 O Engraver é uma ferramenta de alta precisão para tratamento e dithering de imagens
@@ -38,14 +38,14 @@ Você pode realizar conversões em lote ou automatizar tarefas diretamente pelo 
     ./engraver-cli foto.png -o saida.bmp --dpi 300 -m Floyd-Steinberg
 
 Exemplos Úteis:
-  # Usar um preset salvo:
-    engraver-cli foto.png -p "Padrão" -o gravacao.bmp
+  # Usar um preset de fábrica (Fotorealista, Minimalista ou Padrão):
+    engraver-cli foto.png -p "Minimalista" -o gravacao.bmp
 
   # Definir tamanho em mm (ex: medalha de 30mm de largura):
     engraver-cli medalha.png --width 30 --dpi 500 -m Atkinson -o medalha_laser.bmp
 
-  # Imagem com transparência (fundo branco):
-    engraver-cli logo.png --bg branco --sharpen 90 -o logo_laser.bmp
+  # Simplificação modular via CLI (sem CLAHE/nitidez, bilateral + trava de extremos):
+    engraver-cli retrato.png --no-clahe --no-sharpen --bilateral 3 --white-clamp 242 --black-clamp 62 -o retrato_laser.bmp
 
   # Ver todas as opções:
     engraver-cli --help

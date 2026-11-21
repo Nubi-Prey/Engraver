@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self.lbl_status.setStyleSheet("color: #A5A1B8;")
         self.status_bar.addWidget(self.lbl_status)
 
-        self.lbl_app_info = QLabel("Engraver v2.0 • PySide6 / C Engine")
+        self.lbl_app_info = QLabel("Engraver v2.1 • PySide6 / C Engine")
         self.lbl_app_info.setStyleSheet("color: #5E5873;")
         self.status_bar.addPermanentWidget(self.lbl_app_info)
 

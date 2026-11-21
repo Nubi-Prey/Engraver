@@ -58,4 +58,6 @@ test_transparent.png
 test_out.bmp
 processed_*.bmp
 processing_report.txt
+engraver_crash.log
+Imagens test/
 /tmp/test_*

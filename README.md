@@ -1,4 +1,4 @@
-# Engraver — Preparação de Imagens para Gravação a Laser (v2.0)
+# Engraver — Preparação de Imagens para Gravação a Laser (v2.1)
 
 [![CI Test Suite](https://github.com/Nubi-Prey/Engraver/actions/workflows/ci.yml/badge.svg)](https://github.com/Nubi-Prey/Engraver/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/Nubi-Prey/Engraver?color=A855F7&label=Release)](https://github.com/Nubi-Prey/Engraver/releases)
@@ -39,20 +39,19 @@ Não é necessário ter Python instalado para usar o Engraver! Baixe os executá
 | `controllers/` | **Controller** | `AppController` gerencia o fluxo de eventos, concorrência via `QThreadPool`/`QRunnable`, debounce com `QTimer`, diálogo nativo de arquivos e persistência de predefinições. |
 | `cli.py` | **Interface CLI** | Interface de linha de comando com suporte a argumentos customizados, presets e automação em lote. |
 | `engine.py` | **Model** | Pipeline de processamento de imagem de alta performance (OpenCV + PIL + extensões C nativas). |
-| `core/` | **Core Backend** | Acelerador C para difusão de erro (`dither_accel.c`) e gerenciador de predefinições JSON (`presets_manager.py`). |
+| `core/` | **Core Backend** | Pipeline modular de transformações (`pipeline.py`), acelerador C para difusão de erro (`dither_accel.c`), retícula AM (`dither_backend.py`) e gerenciador de predefinições JSON (`presets_manager.py`). |
 
-## Pipeline de Processamento
+## Pipeline Modular de Processamento
 
-1. **Normalização de DPI** — Upscale via Lanczos se a imagem estiver abaixo do DPI alvo
-2. **Processamento de Transparência** — Composição sobre fundo (preto/branco) + borda sólida de 1px
-3. **Brilho e Contraste** — Ajuste fino via OpenCV (slider 0-100, 50=neutro)
-4. **Mixagem de Canais** — `Gray = R×0.6 + G×0.3 + B×0.1` (realce de tons de pele para joias)
-5. **CLAHE + Gamma** — Contraste adaptativo local + correção gamma para tons médios
-6. **Densidade** — Escurecimento linear pré-dithering (mais pontos pretos)
-7. **Nitidez** — High Pass Filter + Unsharp Mask proporcional
-8. **Dithering Acelerado** — Floyd-Steinberg (PIL), Atkinson e Jarvis-Judice-Ninke (C puro via ctypes)
-9. **Inversão** — Opção de inverter cores (negativo para matrizes escuras)
-10. **Máscara de Fundo** — Limpeza de ruído fora do objeto para imagens com canal alfa
+Cada etapa pode ser ativada/desativada individualmente na barra lateral ou via CLI, com presets de fábrica prontos (**`Fotorealista`** selecionado por padrão, **`Minimalista`** para maior durabilidade em fiber laser e **`Padrão`** como base limpa):
+
+1. **Redimensionamento Físico / Resolução Nativa** — Escala exata para `width_mm × height_mm @ DPI` (ou modo 1:1 preservando resolução original)
+2. **Transparência (Alpha)** — Composição sobre fundo (padrão **Branco**, opcional Preto) + contorno limpo
+3. **Módulos de Cor → Cinza** — `Brilho & Contraste` e `Mixagem de Canais` (pesos R/G/B configuráveis ou BT.601 padrão)
+4. **Contraste & Tom** — `CLAHE` (clip/grade configuráveis), `Correção Gama` (`0.4–2.5`) e `Densidade` (`1–10`)
+5. **Detalhe vs. Simplificação** — `Nitidez` (Unsharp + High Pass opcional com bypass real), `Suavização Bilateral` preservadora de bordas, `Trava de Extremos` (branco/preto puro), `Quantização Suave` (K-Means 1D / Uniforme com suavização *smoothstep* entre níveis) e `Limpeza` (`Morfologia Close+Open` ou `Filtro Mediano`)
+6. **Dithering Acelerado** — `Atkinson` e `Jarvis-Judice-Ninke` (C nativo via `ctypes`), `Floyd-Steinberg` (PIL) e `Halftone (Clusters)` (retícula AM 45°)
+7. **Inversão & Máscara Alfa** — Negativo opcional, máscara limpa e metadado de DPI físico embutido no arquivo exportado
 
 ## Instalação e Execução
 
@@ -75,25 +74,28 @@ pip install -r requirements.txt
 python main.py
 ```
 
-- **Visualizador Lado a Lado Sincronizado:** Zoom contínuo (5% a 3200%) e pan espelhado entre Imagem Original e Simulação.
-- **Pixel Inspection:** Renderização nítida (*Nearest Neighbor*) em zoom alto para inspecionar pontos exatos de dithering.
-- **Presets Customizados:** Salve, carregue e gerencie seus perfis de gravação personalizados.
-- **Bloqueio de Proporção (Aspect Ratio):** Dimensões físicas em mm travadas com precisão.
-- **Diálogos Nativos:** Seletores de arquivos nativos do OS via `QFileDialog`.
+- **Visualizador Lado a Lado 100% Fiel à Exportação:** Preview processado exatamente na resolução final de saída (com exportação instantânea reaproveitando o cache), mipmaps `INTER_AREA` sem Moiré em zoom reduzido e pixels 1-bit nítidos a partir de `1:1 Pixel`.
+- **Inspeção Pré-Dithering (`👁 Pré-Dithering`):** Alternância instantânea entre tons de cinza pré-dithering e simulação 1-bit.
+- **Presets Fixos no Topo:** Presets de fábrica (`Fotorealista`, `Minimalista`, `Padrão`) + perfis personalizados salvos em JSON.
+- **Bloqueio de Proporção & Resolução Nativa:** Dimensões físicas em mm travadas com DPI embutido no arquivo exportado, ou modo original 1:1.
+- **Diálogos Nativos & Tema Escuro Forçado:** Seletores nativos via `QFileDialog` e paleta escura consistente em qualquer tema do SO.
 
 ### 2. Modo Linha de Comando (CLI)
 
 O CLI permite processar imagens de forma automatizada via terminal ou scripts externos:
 
 ```bash
-# Processamento básico com configurações padrão
+# Processamento com preset padrão (Fotorealista)
 python cli.py imagem.png
 
-# Processamento aplicando um preset salvo na interface gráfica
-python cli.py imagem.png --preset "Padrão" -o gravacao.bmp
+# Aplicando preset Minimalista (durabilidade em fiber laser)
+python cli.py imagem.png --preset "Minimalista" -o gravacao.bmp
 
-# Configuração detalhada por parâmetros
-python cli.py imagem.png -o saida.bmp -m Atkinson --dpi 600 --sharpen 90 --bg preto
+# Configuração modular detalhada
+python cli.py imagem.png -o saida.bmp --no-clahe --no-sharpen --bilateral 3 --white-clamp 242 --black-clamp 62 --quantize 4 --quantize-softness 35
+
+# Exportação em escala de cinza real (pré-dithering)
+python cli.py imagem.png --preset "Minimalista" --no-dither -o cinza.bmp
 
 # Ajuda e listagem de todos os parâmetros
 python cli.py --help

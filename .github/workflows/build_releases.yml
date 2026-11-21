@@ -33,7 +33,7 @@ jobs:
           path: |
             ~/.cache/Nuitka
             ~/.cache/ccache
-          key: nuitka-linux-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'core/**', 'views/**') }}
+          key: nuitka-linux-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'engine.py', 'core/**', 'controllers/**', 'views/**') }}
           restore-keys: |
             nuitka-linux-${{ runner.os }}-
 
@@ -112,7 +112,7 @@ jobs:
         with:
           path: |
             ~\AppData\Local\Nuitka\Nuitka\Cache
-          key: nuitka-win-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'core/**', 'views/**') }}
+          key: nuitka-win-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'engine.py', 'core/**', 'controllers/**', 'views/**') }}
           restore-keys: |
             nuitka-win-${{ runner.os }}-
 
@@ -164,7 +164,7 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Nuitka
-          key: nuitka-macos-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'core/**', 'views/**') }}
+          key: nuitka-macos-${{ runner.os }}-${{ hashFiles('requirements.txt', 'main.py', 'cli.py', 'engine.py', 'core/**', 'controllers/**', 'views/**') }}
           restore-keys: |
             nuitka-macos-${{ runner.os }}-
 

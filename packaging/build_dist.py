@@ -132,8 +132,8 @@ def run_nuitka(clean: bool = False, dry_run: bool = False):
             f"--windows-icon-from-ico={RESOURCES_DIR / 'icon.ico'}",
             "--windows-company-name=Engraver",
             "--windows-product-name=Engraver",
-            "--windows-file-version=2.0.0.0",
-            "--windows-product-version=2.0.0.0",
+            "--windows-file-version=2.1.0.0",
+            "--windows-product-version=2.1.0.0",
             "--windows-file-description=Engraver - Photo Editor & Laser Dithering Studio",
         ]
     elif is_mac:

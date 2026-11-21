@@ -1,6 +1,6 @@
 ; Script do Inno Setup para o Engraver
 #define MyAppName "Engraver"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "Engraver"
 #define MyAppExeName "Engraver.exe"
 #define MyCliExeName "engraver-cli.exe"
