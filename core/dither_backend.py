@@ -177,3 +177,38 @@ def dither_jarvis(pil_img):
 
     result = np.where(pixels >= 128, 255, 0).astype(np.uint8)
     return Image.fromarray(result).convert("1")
+
+
+def _build_clustered_halftone_tile(cell_size=6):
+    """Gera matriz de limiar 45° clustered-dot (AM) com distribuição tonal uniforme."""
+    c = max(2, int(cell_size))
+    period = c * 2
+    yy, xx = np.mgrid[0:period, 0:period].astype(np.float64)
+    # Deslocamento de 0.5 centraliza os pixels nos centros da grade de 45°
+    spot = np.cos(np.pi * (xx + 0.5) / c) * np.cos(np.pi * (yy + 0.5) / c)
+    # Desempate determinístico leve para preservar simetria nos pontos de sela
+    tie_break = (yy * period + xx) * 1e-9
+    order = np.argsort((spot + tie_break).ravel())
+    ranks = np.empty(period * period, dtype=np.float64)
+    ranks[order] = np.arange(period * period, dtype=np.float64)
+    # Limiar em (0, 255): 0 sempre vira preto (0) e 255 sempre vira branco (255)
+    thresholds = ((ranks + 0.5) / (period * period)) * 255.0
+    return thresholds.reshape((period, period))
+
+
+def dither_halftone_clustered(pil_img, cell_size=6):
+    """Aplica retícula AM em clusters a 45° (pontos agrupados) vetorizada em NumPy."""
+    img = pil_img.convert("L")
+    pixels = np.array(img, dtype=np.float64)
+    h, w = pixels.shape
+    if h == 0 or w == 0:
+        return img.convert("1")
+
+    tile = _build_clustered_halftone_tile(cell_size=cell_size)
+    th, tw = tile.shape
+    reps_y = (h + th - 1) // th
+    reps_x = (w + tw - 1) // tw
+    screen = np.tile(tile, (reps_y, reps_x))[:h, :w]
+
+    result = np.where(pixels >= screen, 255, 0).astype(np.uint8)
+    return Image.fromarray(result).convert("1")

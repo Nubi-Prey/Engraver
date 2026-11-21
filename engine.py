@@ -11,7 +11,17 @@ from PIL import (
     TiffImagePlugin,
     WebPImagePlugin,
 )
-from core.dither_backend import dither_atkinson, dither_jarvis
+from core.dither_backend import dither_atkinson, dither_jarvis, dither_halftone_clustered
+from core.pipeline import (
+    normalize_transforms_config,
+    run_transform_pipeline,
+    transform_brightness_contrast,
+    transform_channel_mixing,
+    transform_clahe,
+    transform_gamma,
+    transform_density,
+    transform_sharpen,
+)
 
 # Tolera JPEGs levemente truncados comuns em downloads de mensageiros (ex.: WhatsApp)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -220,58 +230,51 @@ def process_transparency(pil_img, bg_color=(255, 255, 255)):
 
 
 def apply_brightness_contrast(cv2_img, brightness=50, contrast=50):
-    adj_b = brightness - 50
-    adj_c = contrast - 50
-    beta = adj_b * 2.55
-    alpha = 1.0 + adj_c / 50.0
-    return cv2.convertScaleAbs(cv2_img, alpha=alpha, beta=beta)
+    return transform_brightness_contrast(cv2_img, brightness=brightness, contrast=contrast)
 
 
 def apply_channel_mixing(cv2_img, r_weight=0.6, g_weight=0.3, b_weight=0.1):
-    b, g, r = cv2.split(cv2_img)
-    mixed = (r * r_weight + g * g_weight + b * b_weight).astype(np.uint8)
-    return mixed
+    return transform_channel_mixing(cv2_img, r_weight=r_weight, g_weight=g_weight, b_weight=b_weight)
 
 
-def apply_clahe_gamma(gray_img, clip_limit=2.0, tile_size=8, gamma=1.2, gamma_active=True):
-    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_size, tile_size))
-    clahe_img = clahe.apply(gray_img)
-
+def apply_clahe_gamma(
+    gray_img,
+    clip_limit=2.0,
+    tile_size=8,
+    gamma=1.2,
+    gamma_active=True,
+    clahe_enabled=True,
+):
+    out = transform_clahe(gray_img, clip_limit=clip_limit, tile_size=tile_size) if clahe_enabled else gray_img
     if gamma_active:
-        inv_gamma = 1.0 / gamma
-        table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-        clahe_img = cv2.LUT(clahe_img, table)
-
-    return clahe_img
+        out = transform_gamma(out, gamma=gamma)
+    return out
 
 
 def apply_density_adjustment(gray_img, density=1):
-    if density <= 1:
-        return gray_img
-    offset = int((density - 1) * 10)
-    return cv2.subtract(gray_img, offset)
+    return transform_density(gray_img, level=density)
 
 
-def apply_sharpening(gray_img, hp_sigma=1.5, usm_sigma=1.0, usm_amount=2.5):
-    gray_f = gray_img.astype(np.float32)
-
-    blurred = cv2.GaussianBlur(gray_f, (0, 0), hp_sigma)
-    high_pass = gray_f - blurred
-    sharpened1 = np.clip(gray_f + high_pass, 0.0, 255.0)
-
-    blurred_usm = cv2.GaussianBlur(sharpened1, (0, 0), usm_sigma)
-    sharpened_final = sharpened1 + usm_amount * (sharpened1 - blurred_usm)
-
-    return np.clip(np.rint(sharpened_final), 0.0, 255.0).astype(np.uint8)
+def apply_sharpening(gray_img, hp_sigma=1.5, usm_sigma=1.0, usm_amount=2.5, high_pass=True):
+    amount_pct = int(round((usm_amount / 3.0) * 100.0)) if usm_amount > 0 else 0
+    return transform_sharpen(
+        gray_img,
+        amount=amount_pct,
+        high_pass=high_pass,
+        hp_sigma=hp_sigma,
+        usm_sigma=usm_sigma,
+    )
 
 
-def apply_dithering(pil_img, method="Atkinson"):
+def apply_dithering(pil_img, method="Atkinson", halftone_cell=6):
     if method == "Floyd-Steinberg":
         return pil_img.convert("1", dither=Image.FLOYDSTEINBERG)
     elif method == "Atkinson":
         return dither_atkinson(pil_img)
     elif method == "Jarvis-Judice-Ninke":
         return dither_jarvis(pil_img)
+    elif method == "Halftone (Clusters)":
+        return dither_halftone_clustered(pil_img, cell_size=halftone_cell)
     return dither_atkinson(pil_img)
 
 
@@ -283,20 +286,52 @@ def apply_invert(pil_img):
     return ImageChops.invert(pil_img.convert("RGB"))
 
 
-def process_live_preview(pil_img, settings, preview_mode=False):
+def _finalize_output(pil_img, invert_colors, bg_mask, background):
+    out = apply_invert(pil_img) if invert_colors else pil_img
+    if bg_mask is not None:
+        clean_val = 0 if background == "Preto" else 255
+        clean_bg = Image.new(out.mode, out.size, clean_val)
+        mask = bg_mask if bg_mask.size == out.size else bg_mask.resize(out.size, Image.NEAREST)
+        out = Image.composite(out, clean_bg, mask)
+    return out
+
+
+def resolve_output_dpi(settings):
+    """Retorna o DPI físico (x, y) a ser embutido no arquivo exportado."""
+    if settings.get("keep_native_resolution", False):
+        return _sanitize_dpi(settings.get("current_dpi"), default=(300.0, 300.0))
+    target_dpi = settings.get("target_dpi", 300)
+    return _sanitize_dpi((target_dpi, target_dpi), default=(300.0, 300.0))
+
+
+def save_engraving_image(pil_img, save_path, dpi=None):
+    """Salva a imagem final preservando 1-bit sem perdas (BMP/PNG/TIFF) e embutindo DPI físico."""
+    save_kwargs = {}
+    if dpi is not None:
+        save_kwargs["dpi"] = _sanitize_dpi(dpi, default=(300.0, 300.0))
+
+    if save_path.lower().endswith((".jpg", ".jpeg")):
+        pil_img.convert("L").save(save_path, quality=95, subsampling=0, **save_kwargs)
+    else:
+        pil_img.save(save_path, **save_kwargs)
+
+
+def process_live_preview(
+    pil_img,
+    settings,
+    preview_mode=False,
+    return_pre_dither=False,
+    skip_dither=False,
+):
     current_dpi = settings.get("current_dpi", (72, 72))
     target_dpi = settings.get("target_dpi", 300)
     keep_native_resolution = settings.get("keep_native_resolution", False)
     width_mm = settings.get("width_mm", 0)
     height_mm = settings.get("height_mm", 0)
     background = settings.get("background", "Branco")
-    brightness = settings.get("brightness", 50)
-    contrast = settings.get("contrast", 50)
-    gamma_active = settings.get("gamma_active", True)
-    sharpen = settings.get("sharpen", 85)
     dither_method = settings.get("dither_method", "Atkinson")
+    halftone_cell = settings.get("halftone_cell", 6)
     invert_colors = settings.get("invert_colors", False)
-    density = settings.get("density", 1)
 
     bg_color = (0, 0, 0) if background == "Preto" else (255, 255, 255)
 
@@ -304,8 +339,8 @@ def process_live_preview(pil_img, settings, preview_mode=False):
         if width_mm > 0 and height_mm > 0:
             target_w = max(1, round(width_mm / 25.4 * target_dpi))
             target_h = max(1, round(height_mm / 25.4 * target_dpi))
-            # Redimensiona para a resolução final do laser ANTES de CLAHE/Sharpen/Dither
-            # para calibrar o raio de nitidez aos pixels finais e igualar Preview == Exportação.
+            # Redimensiona para a resolução final do laser ANTES das transformações/dither
+            # para calibrar raios espaciais aos pixels finais e igualar Preview == Exportação.
             if pil_img.size != (target_w, target_h):
                 pil_img = pil_img.resize((target_w, target_h), resample=Image.LANCZOS)
         else:
@@ -314,27 +349,19 @@ def process_live_preview(pil_img, settings, preview_mode=False):
     pil_img, bg_mask = process_transparency(pil_img, bg_color=bg_color)
 
     cv2_img = pil_to_cv2(pil_img)
-    cv2_img = apply_brightness_contrast(cv2_img, brightness=brightness, contrast=contrast)
-    gray_img = apply_channel_mixing(cv2_img)
-    gray_img = apply_clahe_gamma(gray_img, gamma_active=gamma_active)
-    gray_img = apply_density_adjustment(gray_img, density=density)
+    transforms_cfg = normalize_transforms_config(settings)
+    gray_img = run_transform_pipeline(cv2_img, transforms_cfg)
 
-    usm_amount = (sharpen / 100.0) * 3.0
-    gray_img = apply_sharpening(gray_img, usm_amount=usm_amount)
+    pre_dither_raw = Image.fromarray(gray_img, mode="L")
+    pre_dither_pil = _finalize_output(pre_dither_raw, invert_colors, bg_mask, background)
 
-    pil_result = Image.fromarray(gray_img)
+    if skip_dither:
+        return pre_dither_pil
 
-    pil_result = apply_dithering(pil_result, method=dither_method)
+    dithered_raw = apply_dithering(pre_dither_raw, method=dither_method, halftone_cell=halftone_cell)
+    pil_result = _finalize_output(dithered_raw, invert_colors, bg_mask, background)
 
-    if invert_colors:
-        pil_result = apply_invert(pil_result)
-
-    if bg_mask is not None:
-        mode = pil_result.mode
-        clean_val = 0 if background == "Preto" else 255
-        clean_bg = Image.new(mode, pil_result.size, clean_val)
-        if bg_mask.size != pil_result.size:
-            bg_mask = bg_mask.resize(pil_result.size, Image.NEAREST)
-        pil_result = Image.composite(pil_result, clean_bg, bg_mask)
+    if return_pre_dither:
+        return pil_result, pre_dither_pil
 
     return pil_result

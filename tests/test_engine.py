@@ -115,7 +115,7 @@ def test_apply_channel_mixing():
 
 
 def test_apply_dithering_methods(sample_rgb_image):
-    for method in ["Floyd-Steinberg", "Atkinson", "Jarvis-Judice-Ninke"]:
+    for method in ["Floyd-Steinberg", "Atkinson", "Jarvis-Judice-Ninke", "Halftone (Clusters)"]:
         res = engine.apply_dithering(sample_rgb_image, method=method)
         assert res.size == sample_rgb_image.size
         assert res.mode == "1"
@@ -296,3 +296,68 @@ def test_process_live_preview_keep_native_resolution(default_settings):
     res = engine.process_live_preview(native_img, settings, preview_mode=False)
     assert res.size == (640, 480)
     assert res.mode == "1"
+
+
+def test_minimalist_white_clamp_cleans_non_alpha_near_white_bg():
+    # Imagem RGB sem alfa com fundo quase branco #F4F4F4 (244) e quadrado preto central
+    arr = np.full((80, 80, 3), 244, dtype=np.uint8)
+    arr[25:55, 25:55, :] = 15
+    img = Image.fromarray(arr, mode="RGB")
+
+    settings = {
+        "clahe_enabled": False,
+        "gamma_active": False,
+        "sharpen": 0,
+        "white_clamp": 240,
+        "black_clamp": 20,
+        "dither_method": "Atkinson",
+        "background": "Branco",
+    }
+    res_1bit, pre_dither = engine.process_live_preview(
+        img, settings, preview_mode=True, return_pre_dither=True
+    )
+    assert res_1bit.mode == "1"
+    assert pre_dither.mode == "L"
+
+    out_1bit = np.array(res_1bit.convert("L"), dtype=np.uint8)
+    # Área de fundo (topo esquerdo) deve estar 100% branca (0 pixels pretos)
+    assert np.all(out_1bit[:20, :] == 255)
+    # Área central escura deve estar 100% preta
+    assert np.all(out_1bit[30:50, 30:50] == 0)
+
+
+def test_process_live_preview_skip_dither_and_default_white_background(sample_rgba_image):
+    # Sem especificar background -> padrão deve ser Branco (cantos transparentes = 255)
+    res_1bit = engine.process_live_preview(sample_rgba_image, {}, preview_mode=True)
+    arr = np.array(res_1bit.convert("L"), dtype=np.uint8)
+    assert arr[0, 0] == 255
+
+    # skip_dither=True retorna escala de cinza real com tons intermediários
+    grad = np.tile(np.linspace(20, 235, 100, dtype=np.uint8), (60, 1))
+    grad_rgb = Image.fromarray(np.stack([grad, grad, grad], axis=-1), mode="RGB")
+    gray_out = engine.process_live_preview(
+        grad_rgb,
+        {"clahe_enabled": False, "gamma_active": False, "sharpen": 0},
+        preview_mode=True,
+        skip_dither=True,
+    )
+    assert gray_out.mode == "L"
+    assert len(np.unique(np.array(gray_out))) > 10
+
+
+def test_resolve_output_dpi_and_save_engraving_image_embeds_dpi(tmp_path):
+    assert engine.resolve_output_dpi({"target_dpi": 600, "current_dpi": (72.0, 72.0)}) == (600.0, 600.0)
+    assert engine.resolve_output_dpi(
+        {"keep_native_resolution": True, "target_dpi": 600, "current_dpi": (150.0, 150.0)}
+    ) == (150.0, 150.0)
+
+    img_1bit = Image.new("1", (64, 64), 1)
+    for ext in (".bmp", ".png"):
+        out_path = str(tmp_path / f"test_dpi{ext}")
+        engine.save_engraving_image(img_1bit, out_path, dpi=(600.0, 600.0))
+        with Image.open(out_path) as reopened:
+            assert reopened.mode == "1"
+            saved_dpi = reopened.info.get("dpi")
+            assert saved_dpi is not None
+            assert abs(saved_dpi[0] - 600.0) <= 1.0
+            assert abs(saved_dpi[1] - 600.0) <= 1.0
