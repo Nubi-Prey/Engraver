@@ -84,7 +84,8 @@ class CanvasView(QGraphicsView):
         mw = max(1, w // factor)
         mh = max(1, h // factor)
         resized = cv2.resize(self._source_arr, (mw, mh), interpolation=cv2.INTER_AREA)
-        mip_qimg = QImage(resized.data, mw, mh, mw, QImage.Format_Grayscale8).copy()
+        mip_bytes = resized.tobytes()
+        mip_qimg = QImage(mip_bytes, mw, mh, mw, QImage.Format_Grayscale8).copy()
         pm = QPixmap.fromImage(mip_qimg)
         self._mipmaps[level] = pm
         return pm

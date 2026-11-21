@@ -365,17 +365,16 @@ def test_viewer_pre_dither_toggle(qapp):
 
 
 def test_canvas_view_area_mipmaps_and_transformation_modes(qapp):
+    import numpy as np
+    from PIL import Image
     from PySide6.QtCore import Qt
     from views.viewer.canvas_view import CanvasView
 
     canvas = CanvasView(use_area_mipmaps=True)
-    # Padrão xadrez 1-bit 256x256
-    qimg = QImage(256, 256, QImage.Format_Grayscale8)
-    qimg.fill(0)
-    for y in range(256):
-        for x in range(256):
-            if (x + y) % 2 == 0:
-                qimg.setPixel(x, y, 255)
+    # Padrão xadrez 1-bit 256x256 construído via NumPy (rápido e seguro em Python 3.10/3.11/3.12)
+    yy, xx = np.indices((256, 256))
+    checker = np.where((xx + yy) % 2 == 0, 255, 0).astype(np.uint8)
+    qimg = engine.pil_to_qimage(Image.fromarray(checker, mode="L"))
 
     canvas.set_image(qimg)
 
