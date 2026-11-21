@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtGui import QPixmap, QPainter, QImage, QColor, QTransform
 from PySide6.QtWidgets import (
@@ -6,16 +8,30 @@ from PySide6.QtWidgets import (
 
 
 class CanvasView(QGraphicsView):
-    """Visualizador de imagem de alta performance baseado em QGraphicsView."""
+    """Visualizador de imagem de alta performance baseado em QGraphicsView.
+
+    Quando `use_area_mipmaps=True` (usado no painel de simulação 1-bit):
+    - `zoom >= 1.0`: exibe pixels 1:1 nítidos (FastTransformation), sem borrão.
+    - `zoom < 1.0`: utiliza pirâmide de mipmaps via `cv2.INTER_AREA` + SmoothTransformation,
+      eliminando efeito Moiré em padrões de dithering e preservando a densidade real da gravação.
+    """
+
     zoomChanged = Signal(float)       # emite a escala acumulada
     panChanged = Signal(int, int)     # emite valores dos scrollbars (h, v)
 
-    def __init__(self, placeholder_text="Sem Imagem", parent=None):
+    def __init__(self, placeholder_text="Sem Imagem", use_area_mipmaps: bool = False, parent=None):
         super().__init__(parent)
+        self._use_area_mipmaps = bool(use_area_mipmaps)
+        self._base_size = (0, 0)
+        self._mipmaps = {}
+        self._source_arr = None
+        self._active_mipmap_level = 0
+
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
 
         self.pixmap_item = QGraphicsPixmapItem()
+        self.pixmap_item.setTransformationMode(Qt.SmoothTransformation)
         self.scene.addItem(self.pixmap_item)
 
         self.placeholder_item = QGraphicsTextItem(placeholder_text)
@@ -46,14 +62,76 @@ class CanvasView(QGraphicsView):
         self.horizontalScrollBar().valueChanged.connect(self._on_scroll_changed)
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
 
+    def _extract_grayscale_array(self, qimg: QImage):
+        gray = qimg if qimg.format() == QImage.Format_Grayscale8 else qimg.convertToFormat(QImage.Format_Grayscale8)
+        w, h = gray.width(), gray.height()
+        if w <= 0 or h <= 0:
+            return None
+        bpl = gray.bytesPerLine()
+        buf = memoryview(gray.constBits()).tobytes()
+        if len(buf) < h * bpl:
+            return None
+        return np.frombuffer(buf, dtype=np.uint8, count=h * bpl).reshape((h, bpl))[:, :w].copy()
+
+    def _get_mipmap_pixmap(self, level: int):
+        if level in self._mipmaps:
+            return self._mipmaps[level]
+        if level <= 0 or self._source_arr is None:
+            return self._mipmaps.get(0)
+
+        h, w = self._source_arr.shape
+        factor = 1 << level
+        mw = max(1, w // factor)
+        mh = max(1, h // factor)
+        resized = cv2.resize(self._source_arr, (mw, mh), interpolation=cv2.INTER_AREA)
+        mip_qimg = QImage(resized.data, mw, mh, mw, QImage.Format_Grayscale8).copy()
+        pm = QPixmap.fromImage(mip_qimg)
+        self._mipmaps[level] = pm
+        return pm
+
+    def _choose_mipmap_level(self, zoom: float) -> int:
+        if not self._use_area_mipmaps or zoom >= 1.0:
+            return 0
+        w, h = self._base_size
+        min_dim = min(w, h)
+        if zoom <= 0.125 and min_dim >= 32:
+            return 3
+        if zoom <= 0.25 and min_dim >= 16:
+            return 2
+        if zoom <= 0.5 and min_dim >= 8:
+            return 1
+        return 0
+
+    def _apply_mipmap_level(self, level: int):
+        if not self._mipmaps or self._base_size[0] <= 0 or self._base_size[1] <= 0:
+            return
+        if level == self._active_mipmap_level and not self.pixmap_item.pixmap().isNull():
+            return
+        pm = self._get_mipmap_pixmap(level)
+        if pm is None or pm.isNull():
+            return
+        w, h = self._base_size
+        self.pixmap_item.setPixmap(pm)
+        if level == 0 or (pm.width() == w and pm.height() == h):
+            self.pixmap_item.resetTransform()
+        else:
+            self.pixmap_item.setTransform(QTransform.fromScale(w / pm.width(), h / pm.height()))
+        self._active_mipmap_level = level
+
     def set_image(self, qimg: QImage):
         if qimg is None or qimg.isNull():
             return
         pixmap = QPixmap.fromImage(qimg)
+        self._base_size = (pixmap.width(), pixmap.height())
+        self._mipmaps = {0: pixmap}
+        self._active_mipmap_level = 0
+        self._source_arr = self._extract_grayscale_array(qimg) if self._use_area_mipmaps else None
+
         self.pixmap_item.resetTransform()
         self.pixmap_item.setPixmap(pixmap)
         self.placeholder_item.setVisible(False)
-        self.scene.setSceneRect(QRectF(pixmap.rect()))
+        self.scene.setSceneRect(QRectF(0, 0, pixmap.width(), pixmap.height()))
+        self._update_rendering_quality()
 
     def set_display_size(self, target_w: int, target_h: int):
         """Sincroniza a geometria da cena com outro canvas sem reamostrar os pixels do pixmap."""
@@ -68,12 +146,24 @@ class CanvasView(QGraphicsView):
         self.scene.setSceneRect(QRectF(0, 0, target_w, target_h))
 
     def _update_rendering_quality(self):
-        # Em zoom ampliado (> 2.0x), usamos pixelização nítida (Nearest Neighbor)
-        # para que o operador de laser possa inspecionar pontos de dither individuais.
-        if self.current_zoom > 2.0:
-            self.setRenderHint(QPainter.SmoothPixmapTransform, False)
+        if self._use_area_mipmaps:
+            if self.current_zoom >= 1.0:
+                self._apply_mipmap_level(0)
+                self.pixmap_item.setTransformationMode(Qt.FastTransformation)
+                self.setRenderHint(QPainter.SmoothPixmapTransform, False)
+            else:
+                level = self._choose_mipmap_level(self.current_zoom)
+                self._apply_mipmap_level(level)
+                self.pixmap_item.setTransformationMode(Qt.SmoothTransformation)
+                self.setRenderHint(QPainter.SmoothPixmapTransform, True)
         else:
-            self.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            # Painel original: suave em zoom <= 2.0x, pixel nítido em zoom > 2.0x
+            if self.current_zoom > 2.0:
+                self.pixmap_item.setTransformationMode(Qt.FastTransformation)
+                self.setRenderHint(QPainter.SmoothPixmapTransform, False)
+            else:
+                self.pixmap_item.setTransformationMode(Qt.SmoothTransformation)
+                self.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
     def wheelEvent(self, event):
         angle = event.angleDelta().y()

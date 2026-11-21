@@ -119,3 +119,105 @@ def test_app_controller_load_exif_uppercase_jpg_and_effective_dpi_alert(qapp, tm
     controller.load_image(str(amateur_path))
     assert "prefira foto original" in window.sidebar.lbl_res_alert.text()
     controller.cleanup()
+
+
+def test_app_controller_pre_dither_instant_toggle_and_factory_presets(qapp, tmp_path):
+    window = MainWindow()
+    controller = AppController(window)
+
+    # Presets de fábrica carregados no topo da sidebar, com "Fotorealista" selecionado por padrão
+    combo_items = [window.sidebar.combo_presets.itemText(i) for i in range(window.sidebar.combo_presets.count())]
+    assert combo_items[:3] == [
+        "Padrão",
+        "Minimalista",
+        "Fotorealista",
+    ]
+    assert window.sidebar.combo_presets.currentText() == "Fotorealista"
+
+    # Carrega imagem e roda preview com buffer duplo
+    img_path = tmp_path / "sample.png"
+    Image.new("RGB", (120, 120), (160, 120, 90)).save(img_path, dpi=(300, 300))
+    controller.load_image(str(img_path))
+    controller.debounce_timer.stop()
+    controller._run_preview()
+    controller.thread_pool.waitForDone(5000)
+    qapp.processEvents()
+
+    assert controller._last_dither_qimg is not None
+    assert controller._last_pre_dither_qimg is not None
+    assert window.viewer.lbl_sim_status.text() == "Simulação atualizada"
+
+    # Alternar para Pré-Dithering deve atualizar instantaneamente sem disparar novo worker
+    gen_before = controller.preview_generation
+    window.viewer.btn_toggle_view.setChecked(True)
+    assert controller.preview_generation == gen_before
+    assert window.viewer.lbl_sim_status.text() == "Pré-dithering (Cinza)"
+
+    # Alternar de volta para 1-bit
+    window.viewer.btn_toggle_view.setChecked(False)
+    assert controller.preview_generation == gen_before
+    assert window.viewer.lbl_sim_status.text() == "Simulação atualizada"
+    controller.cleanup()
+
+
+def test_preview_export_100_percent_bit_identical_above_2400px(qapp, tmp_path):
+    import numpy as np
+
+    window = MainWindow()
+    controller = AppController(window)
+
+    # Cria imagem gradiente RGB e configura saída > 2400 px (100x60 mm @ 700 DPI = 2756x1654 px)
+    grad = np.tile(np.linspace(10, 245, 300, dtype=np.uint8), (180, 1))
+    rgb = np.stack([grad, np.roll(grad, 30, axis=1), np.flip(grad, axis=1)], axis=-1)
+    src_path = tmp_path / "high_dpi_src.png"
+    Image.fromarray(rgb, mode="RGB").save(src_path, dpi=(300, 300))
+
+    controller.load_image(str(src_path))
+    controller.debounce_timer.stop()
+    window.sidebar.apply_preset_settings(controller.presets_mgr.get_preset("Fotorealista"))
+    window.sidebar.aspect_lock.set_dimensions(100.0, 60.0)
+    window.sidebar.slider_dpi.setValue(700)
+    controller.debounce_timer.stop()
+
+    controller._run_preview()
+    controller.thread_pool.waitForDone(10000)
+    qapp.processEvents()
+
+    expected_w = round(100.0 / 25.4 * 700)
+    expected_h = round(60.0 / 25.4 * 700)
+    assert expected_w > 2400
+    assert controller._last_dither_pil is not None
+    assert controller._last_dither_pil.size == (expected_w, expected_h)
+
+    settings = window.sidebar.get_all_settings()
+    settings["current_dpi"] = controller.original_dpi
+
+    # 1. Exportação reaproveitando o cache do preview
+    out_cached = str(tmp_path / "export_cached.bmp")
+    w_cached = ExportWorker(controller.original_pil, settings, out_cached, cached_pil=controller._last_dither_pil)
+    w_cached.run()
+
+    # 2. Exportação recalculada do zero (sem cache)
+    out_fresh = str(tmp_path / "export_fresh.bmp")
+    w_fresh = ExportWorker(controller.original_pil, settings, out_fresh, cached_pil=None)
+    w_fresh.run()
+
+    preview_arr = np.array(controller._last_dither_pil.convert("L"), dtype=np.uint8)
+    with Image.open(out_cached) as img_c, Image.open(out_fresh) as img_f:
+        assert img_c.mode == "1"
+        assert img_f.mode == "1"
+        assert img_c.size == (expected_w, expected_h)
+        assert abs(img_c.info["dpi"][0] - 700.0) <= 1.0
+        assert np.array_equal(preview_arr, np.array(img_c.convert("L"), dtype=np.uint8))
+        assert np.array_equal(preview_arr, np.array(img_f.convert("L"), dtype=np.uint8))
+
+    # Valida single-flight coalescing: não dispara segundo worker se um já está ativo
+    controller._preview_in_flight = True
+    gen_start = controller.preview_generation
+    controller._run_preview()
+    assert controller._preview_dirty is True
+    assert controller.preview_generation == gen_start + 1
+    controller._preview_in_flight = False
+    controller._preview_dirty = False
+
+    controller.cleanup()

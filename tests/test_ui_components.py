@@ -269,3 +269,134 @@ def test_forced_dark_palette_and_sidebar_background(qapp):
 
     sidebar = SettingsSidebar()
     assert sidebar.testAttribute(Qt.WA_StyledBackground) is True
+
+
+def test_transform_card_toggle_and_summary(qapp):
+    from views.components.transform_card import TransformCard
+
+    card = TransformCard("bilateral", "7. Suavização Bilateral", default_enabled=False)
+    card.set_summary_fn(lambda: "3× • σ45")
+    assert not card.is_enabled()
+    assert not card.is_expanded()
+    assert card.lbl_summary.text() == "OFF"
+
+    changes = []
+    card.changed.connect(lambda: changes.append(True))
+
+    card.chk_enabled.setChecked(True)
+    assert card.is_enabled()
+    assert card.is_expanded()
+    assert card.lbl_summary.text() == "3× • σ45"
+    assert len(changes) == 1
+
+    card.chk_enabled.setChecked(False)
+    assert not card.is_enabled()
+    assert not card.is_expanded()
+    assert card.lbl_summary.text() == "OFF"
+    assert len(changes) == 2
+
+
+def test_sidebar_modular_cards_white_default_and_preset_application(qapp):
+    from views.sidebar.settings_sidebar import SettingsSidebar
+    from core.presets_manager import FACTORY_PRESETS
+    from core.pipeline import get_transform_entry
+
+    sidebar = SettingsSidebar()
+
+    # Fundo padrão deve ser Branco
+    assert sidebar.rb_bg_white.isChecked() is True
+    assert sidebar.rb_bg_black.isChecked() is False
+
+    # Todos os 10 módulos devem existir
+    assert len(sidebar.transform_cards) == 10
+
+    # Halftone disponível no combo e slider de célula só visível quando selecionado na Aba 2
+    sidebar.tabs.setCurrentIndex(1)
+    assert sidebar.combo_method.findText("Halftone (Clusters)") >= 0
+    assert sidebar.slider_halftone_cell.isHidden() is True
+    sidebar.combo_method.setCurrentText("Halftone (Clusters)")
+    assert sidebar.slider_halftone_cell.isHidden() is False
+    assert sidebar.slider_halftone_cell.isVisibleTo(sidebar) is True
+
+    # Aplicar preset "Minimalista" emite settingsChanged exatamente uma vez
+    emitted = []
+    sidebar.settingsChanged.connect(lambda: emitted.append(True))
+    sidebar.apply_preset_settings(FACTORY_PRESETS["Minimalista"])
+    assert len(emitted) == 1
+
+    settings = sidebar.get_all_settings()
+    assert settings["background"] == "Branco"
+    assert get_transform_entry(settings["transforms"], "clahe")["enabled"] is False
+    assert get_transform_entry(settings["transforms"], "gamma")["enabled"] is True
+    assert get_transform_entry(settings["transforms"], "tone_clamp")["enabled"] is True
+    assert get_transform_entry(settings["transforms"], "tone_clamp")["params"]["black_clamp"] == 62
+    assert get_transform_entry(settings["transforms"], "tone_clamp")["params"]["white_clamp"] == 242
+
+    # Aplicar "Fotorealista" ativa CLAHE, Nitidez e Bilateral suave
+    sidebar.apply_preset_settings(FACTORY_PRESETS["Fotorealista"])
+    photo_settings = sidebar.get_all_settings()
+    assert get_transform_entry(photo_settings["transforms"], "clahe")["enabled"] is True
+    assert get_transform_entry(photo_settings["transforms"], "sharpen")["enabled"] is True
+    assert get_transform_entry(photo_settings["transforms"], "bilateral")["enabled"] is True
+
+    # Voltar para "Padrão" (base limpa) deve desligar todos os módulos
+    sidebar.apply_preset_settings(FACTORY_PRESETS["Padrão"])
+    clean_settings = sidebar.get_all_settings()
+    assert all(not t["enabled"] for t in clean_settings["transforms"])
+
+
+def test_viewer_pre_dither_toggle(qapp):
+    viewer = SideBySideViewer()
+    toggled_states = []
+    viewer.previewStageToggled.connect(lambda state: toggled_states.append(state))
+
+    assert not viewer.is_pre_dither_view()
+    assert "DITHERING" in viewer.lbl_sim_title.text()
+
+    viewer.btn_toggle_view.setChecked(True)
+    assert viewer.is_pre_dither_view()
+    assert "PRÉ-DITHERING" in viewer.lbl_sim_title.text()
+    assert toggled_states == [True]
+
+    viewer.btn_toggle_view.setChecked(False)
+    assert not viewer.is_pre_dither_view()
+    assert "DITHERING" in viewer.lbl_sim_title.text()
+    assert toggled_states == [True, False]
+
+
+def test_canvas_view_area_mipmaps_and_transformation_modes(qapp):
+    from PySide6.QtCore import Qt
+    from views.viewer.canvas_view import CanvasView
+
+    canvas = CanvasView(use_area_mipmaps=True)
+    # Padrão xadrez 1-bit 256x256
+    qimg = QImage(256, 256, QImage.Format_Grayscale8)
+    qimg.fill(0)
+    for y in range(256):
+        for x in range(256):
+            if (x + y) % 2 == 0:
+                qimg.setPixel(x, y, 255)
+
+    canvas.set_image(qimg)
+
+    # Zoom 1.0x (1:1 Pixel) e 1.5x -> pixel exato (FastTransformation, mipmap 0)
+    canvas.set_zoom_absolute(1.0)
+    assert canvas.pixmap_item.transformationMode() == Qt.FastTransformation
+    assert canvas._active_mipmap_level == 0
+
+    canvas.set_zoom_absolute(1.5)
+    assert canvas.pixmap_item.transformationMode() == Qt.FastTransformation
+    assert canvas._active_mipmap_level == 0
+
+    # Zoom 0.25x -> SmoothTransformation + mipmap INTER_AREA nível 2 preservando geometria 256x256
+    canvas.set_zoom_absolute(0.25)
+    assert canvas.pixmap_item.transformationMode() == Qt.SmoothTransformation
+    assert canvas._active_mipmap_level == 2
+    rect = canvas.pixmap_item.sceneBoundingRect()
+    assert abs(rect.width() - 256.0) < 0.5
+    assert abs(rect.height() - 256.0) < 0.5
+
+    # Retornar para 1:1 restaura full-res nítido
+    canvas.zoom_1_to_1()
+    assert canvas.pixmap_item.transformationMode() == Qt.FastTransformation
+    assert canvas._active_mipmap_level == 0

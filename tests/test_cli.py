@@ -110,3 +110,52 @@ def test_main_cli_dispatch(monkeypatch):
 
     assert exited is True
     assert exit_code == 0
+
+
+def test_cli_modular_minimalist_flags_and_real_no_dither(tmp_path):
+    import numpy as np
+
+    # Cria imagem gradiente com fundo quase branco #F4F4F4 no topo
+    arr = np.tile(np.linspace(15, 244, 80, dtype=np.uint8), (80, 1))
+    arr[:20, :] = 244
+    rgb = np.stack([arr, arr, arr], axis=-1)
+    in_path = str(tmp_path / "grad.png")
+    Image.fromarray(rgb, mode="RGB").save(in_path, dpi=(300, 300))
+
+    # 1. Saída 1-bit com flags minimalistas modulares + limpeza mediana
+    out_1bit = str(tmp_path / "out_min.bmp")
+    ret = run_cli([
+        in_path,
+        "-o", out_1bit,
+        "--no-clahe",
+        "--no-sharpen",
+        "--bilateral", "2",
+        "--white-clamp", "240",
+        "--black-clamp", "20",
+        "--quantize", "4",
+        "--quantize-softness", "35",
+        "--cleanup", "median",
+        "--cleanup-kernel", "3",
+        "-m", "Halftone (Clusters)",
+        "--halftone-cell", "6",
+        "-q",
+    ])
+    assert ret == 0
+    with Image.open(out_1bit) as img:
+        assert img.mode == "1"
+        out_arr = np.array(img.convert("L"), dtype=np.uint8)
+        assert np.all(out_arr[:15, :] == 255)
+
+    # 2. --no-dither com preset "Padrão" (base limpa) deve produzir escala de cinza real (>2 tons)
+    out_gray = str(tmp_path / "out_gray.bmp")
+    ret2 = run_cli([
+        in_path,
+        "-o", out_gray,
+        "--preset", "Padrão",
+        "--no-dither",
+        "-q",
+    ])
+    assert ret2 == 0
+    with Image.open(out_gray) as img_g:
+        assert img_g.mode == "L"
+        assert len(np.unique(np.array(img_g))) > 10

@@ -1,14 +1,14 @@
+import json
 import os
 from PIL import Image
 from PySide6.QtCore import QObject, QTimer, QThreadPool
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QInputDialog
 
 from views.main_window import MainWindow
-from core.presets_manager import PresetsManager
+from core.presets_manager import DEFAULT_STARTUP_PRESET, PresetsManager
 from controllers.preview_worker import PreviewWorker, ExportWorker
 import engine
 
-PREVIEW_MAX_PX = 2400
 ORIG_DISPLAY_MAX_PX = 4096
 IMAGE_FILE_FILTER = (
     "Imagens (*.png *.PNG *.jpg *.JPG *.jpeg *.JPEG *.jfif *.JFIF "
@@ -29,6 +29,12 @@ class AppController(QObject):
         self.current_filename = None
         self._pending_filepath = None
         self.preview_generation = 0
+        self._preview_in_flight = False
+        self._preview_dirty = False
+        self._last_dither_pil = None
+        self._last_preview_key = None
+        self._last_dither_qimg = None
+        self._last_pre_dither_qimg = None
 
         self.debounce_timer = QTimer(self)
         self.debounce_timer.setSingleShot(True)
@@ -56,30 +62,15 @@ class AppController(QObject):
         sb.presetSelected.connect(self.on_preset_selected)
         sb.presetSaveClicked.connect(self.on_preset_save)
         sb.presetDeleteClicked.connect(self.on_preset_delete)
+        self.view.viewer.previewStageToggled.connect(self.on_preview_stage_toggled)
 
     def _init_presets(self):
         presets = self.presets_mgr.list_presets()
-        self.view.sidebar.update_presets_list(presets, current="Padrão")
+        self.view.sidebar.update_presets_list(presets, current=DEFAULT_STARTUP_PRESET)
+        self.view.sidebar.apply_preset_settings(self.presets_mgr.get_preset(DEFAULT_STARTUP_PRESET))
 
-    def _downscale_for_preview(self, pil_img, target_w=0, target_h=0):
-        # Se dimensões de corte foram calculadas, utiliza a escala real do laser com teto de performance
-        if target_w > 0 and target_h > 0:
-            cur_w, cur_h = target_w, target_h
-            if max(cur_w, cur_h) > PREVIEW_MAX_PX:
-                scale = PREVIEW_MAX_PX / max(cur_w, cur_h)
-                cur_w = max(1, int(cur_w * scale))
-                cur_h = max(1, int(cur_h * scale))
-            if pil_img.size != (cur_w, cur_h):
-                return pil_img.resize((cur_w, cur_h), Image.LANCZOS)
-            return pil_img
-
-        w, h = pil_img.size
-        if max(w, h) <= PREVIEW_MAX_PX:
-            return pil_img
-        ratio = PREVIEW_MAX_PX / max(w, h)
-        new_w = int(w * ratio)
-        new_h = int(h * ratio)
-        return pil_img.resize((new_w, new_h), Image.LANCZOS)
+    def _make_preview_key(self, settings: dict):
+        return (id(self.original_pil), json.dumps(settings, sort_keys=True, default=str))
 
     def on_open_file(self):
         filepath, _ = QFileDialog.getOpenFileName(
@@ -108,6 +99,10 @@ class AppController(QObject):
             self.original_dpi = dpi
             self.current_filepath = filepath
             self.current_filename = os.path.basename(filepath)
+            self._last_dither_pil = None
+            self._last_preview_key = None
+            self._last_dither_qimg = None
+            self._last_pre_dither_qimg = None
 
             w, h = pil_img.size
             mp = (w * h) / 1_000_000
@@ -201,6 +196,14 @@ class AppController(QObject):
         if self.original_pil is None:
             return
 
+        # Single-flight coalescing: evita empilhar múltiplos workers pesados em resolução cheia
+        if self._preview_in_flight:
+            self._preview_dirty = True
+            self.preview_generation += 1
+            return
+
+        self._preview_in_flight = True
+        self._preview_dirty = False
         self.preview_generation += 1
         gen = self.preview_generation
 
@@ -210,36 +213,47 @@ class AppController(QObject):
 
         settings = self.view.sidebar.get_all_settings()
         settings["current_dpi"] = self.original_dpi
+        preview_key = self._make_preview_key(settings)
 
-        if settings.get("keep_native_resolution", False):
-            target_w, target_h = self.original_pil.size
-        else:
-            width_mm = settings.get("width_mm", 0)
-            height_mm = settings.get("height_mm", 0)
-            target_dpi = settings.get("target_dpi", 300)
-            target_w = round(width_mm / 25.4 * target_dpi) if width_mm > 0 else 0
-            target_h = round(height_mm / 25.4 * target_dpi) if height_mm > 0 else 0
-
-        # Prepara a imagem de preview na resolução real de saída do laser (com teto de performance)
-        preview_img = self._downscale_for_preview(self.original_pil, target_w=target_w, target_h=target_h)
-
-        worker = PreviewWorker(preview_img, settings, gen)
+        # Roda na resolução EXATA da exportação (sem PREVIEW_MAX_PX) para 100% de fidelidade
+        worker = PreviewWorker(self.original_pil, settings, gen, preview_key=preview_key)
         worker.signals.finished.connect(self._on_preview_finished)
         worker.signals.error.connect(self._on_preview_error)
 
         self.thread_pool.start(worker)
 
-    def _on_preview_finished(self, generation, qimg):
+    def _on_preview_finished(self, generation, preview_key, dither_pil, qimg_dither, qimg_pre_dither):
+        self._preview_in_flight = False
         if generation == self.preview_generation:
+            self._last_dither_pil = dither_pil
+            self._last_preview_key = preview_key
+            self._last_dither_qimg = qimg_dither
+            self._last_pre_dither_qimg = qimg_pre_dither
+            active_qimg = qimg_pre_dither if self.view.viewer.is_pre_dither_view() else qimg_dither
             # Sincroniza a geometria da cena do canvas original sem destruir seus pixels nativos
-            self.view.viewer.canvas_orig.set_display_size(qimg.width(), qimg.height())
-            self.view.viewer.set_simulated_image(qimg, "Simulação atualizada")
+            self.view.viewer.canvas_orig.set_display_size(active_qimg.width(), active_qimg.height())
+            status_lbl = "Pré-dithering (Cinza)" if self.view.viewer.is_pre_dither_view() else "Simulação atualizada"
+            self.view.viewer.set_simulated_image(active_qimg, status_lbl)
             self._update_resolution_info()
 
+        if self._preview_dirty:
+            self._preview_dirty = False
+            self._run_preview()
+
+    def on_preview_stage_toggled(self, show_pre_dither: bool):
+        active_qimg = self._last_pre_dither_qimg if show_pre_dither else self._last_dither_qimg
+        if active_qimg is not None:
+            status_lbl = "Pré-dithering (Cinza)" if show_pre_dither else "Simulação atualizada"
+            self.view.viewer.set_simulated_image(active_qimg, status_lbl)
+
     def _on_preview_error(self, generation, error_msg):
+        self._preview_in_flight = False
         if generation == self.preview_generation:
             self.view.viewer.set_loading(False, "Erro no processamento")
             self.view.set_status(f"Erro no preview: {error_msg}")
+        if self._preview_dirty:
+            self._preview_dirty = False
+            self._run_preview()
 
     def on_export_file(self):
         if self.original_pil is None:
@@ -278,11 +292,19 @@ class AppController(QObject):
 
         settings = self.view.sidebar.get_all_settings()
         settings["current_dpi"] = self.original_dpi
+        current_key = self._make_preview_key(settings)
+        cached_pil = self._last_dither_pil if (
+            self._last_dither_pil is not None and self._last_preview_key == current_key
+        ) else None
 
         self.view.sidebar.set_exporting_state(True)
-        self.view.set_status("Exportando imagem em resolução máxima...")
+        self.view.set_status(
+            "Exportando imagem (100% idêntica ao preview)..."
+            if cached_pil is not None
+            else "Exportando imagem em resolução máxima..."
+        )
 
-        worker = ExportWorker(self.original_pil, settings, save_path)
+        worker = ExportWorker(self.original_pil, settings, save_path, cached_pil=cached_pil)
         worker.signals.finished.connect(self._on_export_success)
         worker.signals.error.connect(self._on_export_error)
         self.thread_pool.start(worker)
@@ -322,11 +344,11 @@ class AppController(QObject):
 
     def on_preset_delete(self):
         current = self.view.sidebar.combo_presets.currentText()
-        if current == "Padrão":
+        if self.presets_mgr.is_factory_preset(current):
             QMessageBox.information(
                 self.view,
                 "Aviso",
-                "O preset de fábrica 'Padrão' não pode ser excluído."
+                f"O preset de fábrica '{current}' não pode ser excluído."
             )
             return
 
@@ -340,5 +362,6 @@ class AppController(QObject):
         if reply == QMessageBox.Yes:
             self.presets_mgr.delete_preset(current)
             presets = self.presets_mgr.list_presets()
-            self.view.sidebar.update_presets_list(presets, current="Padrão")
+            self.view.sidebar.update_presets_list(presets, current=DEFAULT_STARTUP_PRESET)
+            self.view.sidebar.apply_preset_settings(self.presets_mgr.get_preset(DEFAULT_STARTUP_PRESET))
             self.view.set_status(f"Preset '{current}' excluído.")

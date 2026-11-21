@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSplitter
@@ -9,6 +9,8 @@ from views.components.loading_spinner import LoadingSpinner
 
 class SideBySideViewer(QWidget):
     """Contêiner com dois visores sincronizados: Original vs Simulação."""
+    previewStageToggled = Signal(bool)  # True = Pré-Dithering (Cinza), False = 1-bit (Dithering)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -50,6 +52,35 @@ class SideBySideViewer(QWidget):
         self.btn_1to1.clicked.connect(self.zoom_1_to_1_both)
         toolbar.addWidget(self.btn_1to1)
 
+        self.btn_toggle_view = QPushButton("👁 Pré-Dithering")
+        self.btn_toggle_view.setCheckable(True)
+        self.btn_toggle_view.setChecked(False)
+        self.btn_toggle_view.setToolTip("Alternar entre visualização Pré-Dithering (tons de cinza) e 1-bit (Laser)")
+        self.btn_toggle_view.setStyleSheet("""
+            QPushButton {
+                background-color: #1F1C2E;
+                border: 1px solid #6366F1;
+                border-radius: 4px;
+                color: #F8FAFC;
+                font-size: 11px;
+                padding: 4px 10px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #6366F1;
+                color: #FFFFFF;
+                border-color: #C084FC;
+            }
+            QPushButton:checked {
+                background-color: #A855F7;
+                color: #FFFFFF;
+                border-color: #E9D5FF;
+                font-weight: bold;
+            }
+        """)
+        self.btn_toggle_view.toggled.connect(self._on_view_stage_toggled)
+        toolbar.addWidget(self.btn_toggle_view)
+
         main_layout.addLayout(toolbar)
 
         # Divisão central Lado a Lado
@@ -88,9 +119,9 @@ class SideBySideViewer(QWidget):
 
         header_sim = QHBoxLayout()
         header_sim.setSpacing(6)
-        lbl_sim_title = QLabel("SIMULAÇÃO - DITHERING")
-        lbl_sim_title.setStyleSheet("font-weight: bold; font-size: 12px; color: #C084FC;")
-        header_sim.addWidget(lbl_sim_title)
+        self.lbl_sim_title = QLabel("SIMULAÇÃO - DITHERING")
+        self.lbl_sim_title.setStyleSheet("font-weight: bold; font-size: 12px; color: #C084FC;")
+        header_sim.addWidget(self.lbl_sim_title)
 
         self.spinner = LoadingSpinner(size=14, line_width=2.0, color="#C084FC", track_color="#1F1C2E")
         header_sim.addWidget(self.spinner)
@@ -101,7 +132,7 @@ class SideBySideViewer(QWidget):
         header_sim.addWidget(self.lbl_sim_status)
         right_layout.addLayout(header_sim)
 
-        self.canvas_sim = CanvasView(placeholder_text="Aguardando simulação...")
+        self.canvas_sim = CanvasView(placeholder_text="Aguardando simulação...", use_area_mipmaps=True)
         right_layout.addWidget(self.canvas_sim)
 
         splitter.addWidget(left_container)
@@ -121,6 +152,18 @@ class SideBySideViewer(QWidget):
 
     def _on_sim_pan(self, h: int, v: int):
         self.canvas_orig.sync_scroll_from(self.canvas_sim)
+
+    def _on_view_stage_toggled(self, show_pre_dither: bool):
+        if show_pre_dither:
+            self.lbl_sim_title.setText("INSPEÇÃO - PRÉ-DITHERING (CINZA)")
+            self.lbl_sim_title.setStyleSheet("font-weight: bold; font-size: 12px; color: #38BDF8;")
+        else:
+            self.lbl_sim_title.setText("SIMULAÇÃO - DITHERING")
+            self.lbl_sim_title.setStyleSheet("font-weight: bold; font-size: 12px; color: #C084FC;")
+        self.previewStageToggled.emit(show_pre_dither)
+
+    def is_pre_dither_view(self) -> bool:
+        return self.btn_toggle_view.isChecked()
 
     def _toolbar_btn_style(self):
         return """
